@@ -80,11 +80,27 @@ void HandleNavigateForward(content::WebContents* web_contents,
   }
 }
 
+class ReloadWaiter : public content::WebContentsObserver {
+ public:
+  ReloadWaiter(content::WebContents* wc, ToolResultCallback cb)
+      : content::WebContentsObserver(wc), callback_(std::move(cb)) {}
+
+  void DidStopLoading() override {
+    if (callback_) {
+      std::move(callback_).Run(TextContent("Page reloaded"), false);
+    }
+    delete this;
+  }
+
+ private:
+  ToolResultCallback callback_;
+};
+
 void HandleReload(content::WebContents* web_contents,
                   base::DictValue args,
                   ToolResultCallback callback) {
+  new ReloadWaiter(web_contents, std::move(callback));
   web_contents->GetController().Reload(content::ReloadType::NORMAL, false);
-  std::move(callback).Run(TextContent("Page reloaded"), false);
 }
 
 }  // namespace
