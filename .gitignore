@@ -1,10 +1,18 @@
 fingerprints/current/*.json
 *.DS_Store
 
+# Tools
+.claude/
+
 # Chromium source and gclient state (managed by gclient, not tracked)
 chromium/*
 !chromium/.gclient
 out
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
 
 # Test artifacts
 tests/artifacts/
