@@ -77,6 +77,7 @@ class MCPServer : public content::WebContentsObserver {
   void SendResult(const base::Value& id, base::DictValue result);
   void SendError(const base::Value& id, int code, const std::string& message);
 
+  void OnTransportClosed();
   void StartBehaviorSimulation();
   void DispatchMouseMove();
 

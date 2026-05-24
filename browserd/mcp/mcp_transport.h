@@ -15,6 +15,7 @@ class MCPTransport {
  public:
   using MessageCallback =
       base::RepeatingCallback<void(base::DictValue message)>;
+  using CloseCallback = base::OnceClosure;
 
   MCPTransport();
   ~MCPTransport();
@@ -23,7 +24,8 @@ class MCPTransport {
   MCPTransport& operator=(const MCPTransport&) = delete;
 
   void Start(scoped_refptr<base::SequencedTaskRunner> main_task_runner,
-             MessageCallback message_callback);
+             MessageCallback message_callback,
+             CloseCallback close_callback);
   void SendMessage(const base::DictValue& message);
 
  private:
@@ -32,6 +34,7 @@ class MCPTransport {
   base::Thread reader_thread_;
   scoped_refptr<base::SequencedTaskRunner> main_task_runner_;
   MessageCallback message_callback_;
+  CloseCallback close_callback_;
 };
 
 }  // namespace browserd

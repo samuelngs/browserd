@@ -17,9 +17,11 @@ MCPTransport::~MCPTransport() {
 
 void MCPTransport::Start(
     scoped_refptr<base::SequencedTaskRunner> main_task_runner,
-    MessageCallback message_callback) {
+    MessageCallback message_callback,
+    CloseCallback close_callback) {
   main_task_runner_ = std::move(main_task_runner);
   message_callback_ = std::move(message_callback);
+  close_callback_ = std::move(close_callback);
 
   reader_thread_.Start();
   reader_thread_.task_runner()->PostTask(
@@ -51,10 +53,9 @@ void MCPTransport::ReadLoop() {
         base::BindOnce(message_callback_, std::move(parsed.value())));
   }
 
-  // stdin closed — shut down.
-  main_task_runner_->PostTask(FROM_HERE, base::BindOnce([]() {
-    LOG(INFO) << "MCP stdin closed, shutting down.";
-  }));
+  if (close_callback_) {
+    main_task_runner_->PostTask(FROM_HERE, std::move(close_callback_));
+  }
 }
 
 }  // namespace browserd

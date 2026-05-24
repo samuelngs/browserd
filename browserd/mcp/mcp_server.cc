@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "headless/public/headless_browser.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
@@ -37,7 +38,9 @@ MCPServer::~MCPServer() = default;
 void MCPServer::Start(scoped_refptr<base::SequencedTaskRunner> task_runner) {
   transport_.Start(task_runner,
                    base::BindRepeating(&MCPServer::OnMessage,
-                                       base::Unretained(this)));
+                                       base::Unretained(this)),
+                   base::BindOnce(&MCPServer::OnTransportClosed,
+                                  base::Unretained(this)));
   StartBehaviorSimulation();
 }
 
@@ -94,6 +97,12 @@ void MCPServer::OnMessage(base::DictValue message) {
     HandleInitialize(params ? *params : empty_params, id);
   } else if (*method == "notifications/initialized") {
     initialized_ = true;
+  } else if (*method == "ping") {
+    SendResult(id, base::DictValue());
+  } else if (!initialized_) {
+    if (id_ptr) {
+      SendError(id, -32002, "Server not initialized");
+    }
   } else if (*method == "tools/list") {
     HandleToolsList(id);
   } else if (*method == "tools/call") {
@@ -118,6 +127,7 @@ void MCPServer::HandleInitialize(const base::DictValue& params,
 
   base::DictValue capabilities;
   base::DictValue tools_cap;
+  tools_cap.Set("listChanged", false);
   capabilities.Set("tools", std::move(tools_cap));
   result.Set("capabilities", std::move(capabilities));
 
@@ -271,6 +281,13 @@ void MCPServer::DispatchMouseMove() {
       FROM_HERE, base::Milliseconds(next_ms),
       base::BindRepeating(&MCPServer::DispatchMouseMove,
                            base::Unretained(this)));
+}
+
+void MCPServer::OnTransportClosed() {
+  behavior_timer_.Stop();
+  if (browser_) {
+    browser_->Shutdown();
+  }
 }
 
 }  // namespace browserd
