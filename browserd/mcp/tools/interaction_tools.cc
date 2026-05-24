@@ -400,20 +400,60 @@ void TypeNextChar(content::WebContents* wc,
 
   char c = state->text[state->index];
   int windows_key_code = 0;
+  int modifiers = blink::WebInputEvent::kNoModifiers;
   ui::DomKey dom_key = ui::DomKey::FromCharacter(c);
 
-  if (c >= 'a' && c <= 'z')
+  if (c >= 'a' && c <= 'z') {
     windows_key_code = ui::VKEY_A + (c - 'a');
-  else if (c >= 'A' && c <= 'Z')
+  } else if (c >= 'A' && c <= 'Z') {
     windows_key_code = ui::VKEY_A + (c - 'A');
-  else if (c >= '0' && c <= '9')
+    modifiers = blink::WebInputEvent::kShiftKey;
+  } else if (c >= '0' && c <= '9') {
     windows_key_code = ui::VKEY_0 + (c - '0');
-  else if (c == ' ')
+  } else if (c == ' ') {
     windows_key_code = ui::VKEY_SPACE;
+  } else {
+    // Special characters — map to base key + shift where needed.
+    switch (c) {
+      case '!': windows_key_code = ui::VKEY_1; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '@': windows_key_code = ui::VKEY_2; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '#': windows_key_code = ui::VKEY_3; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '$': windows_key_code = ui::VKEY_4; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '%': windows_key_code = ui::VKEY_5; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '^': windows_key_code = ui::VKEY_6; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '&': windows_key_code = ui::VKEY_7; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '*': windows_key_code = ui::VKEY_8; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '(': windows_key_code = ui::VKEY_9; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case ')': windows_key_code = ui::VKEY_0; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '-': windows_key_code = ui::VKEY_OEM_MINUS; break;
+      case '_': windows_key_code = ui::VKEY_OEM_MINUS; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '=': windows_key_code = ui::VKEY_OEM_PLUS; break;
+      case '+': windows_key_code = ui::VKEY_OEM_PLUS; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '[': windows_key_code = ui::VKEY_OEM_4; break;
+      case '{': windows_key_code = ui::VKEY_OEM_4; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case ']': windows_key_code = ui::VKEY_OEM_6; break;
+      case '}': windows_key_code = ui::VKEY_OEM_6; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '\\': windows_key_code = ui::VKEY_OEM_5; break;
+      case '|': windows_key_code = ui::VKEY_OEM_5; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case ';': windows_key_code = ui::VKEY_OEM_1; break;
+      case ':': windows_key_code = ui::VKEY_OEM_1; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '\'': windows_key_code = ui::VKEY_OEM_7; break;
+      case '"': windows_key_code = ui::VKEY_OEM_7; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case ',': windows_key_code = ui::VKEY_OEM_COMMA; break;
+      case '<': windows_key_code = ui::VKEY_OEM_COMMA; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '.': windows_key_code = ui::VKEY_OEM_PERIOD; break;
+      case '>': windows_key_code = ui::VKEY_OEM_PERIOD; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '/': windows_key_code = ui::VKEY_OEM_2; break;
+      case '?': windows_key_code = ui::VKEY_OEM_2; modifiers = blink::WebInputEvent::kShiftKey; break;
+      case '`': windows_key_code = ui::VKEY_OEM_3; break;
+      case '~': windows_key_code = ui::VKEY_OEM_3; modifiers = blink::WebInputEvent::kShiftKey; break;
+      default: windows_key_code = 0; break;
+    }
+  }
 
   input::NativeWebKeyboardEvent down(
       blink::WebInputEvent::Type::kRawKeyDown,
-      blink::WebInputEvent::kNoModifiers,
+      modifiers,
       ui::EventTimeForNow());
   down.windows_key_code = windows_key_code;
   down.dom_key = static_cast<uint32_t>(dom_key);
@@ -421,7 +461,7 @@ void TypeNextChar(content::WebContents* wc,
 
   input::NativeWebKeyboardEvent char_event(
       blink::WebInputEvent::Type::kChar,
-      blink::WebInputEvent::kNoModifiers,
+      modifiers,
       ui::EventTimeForNow());
   char_event.windows_key_code = c;
   char_event.dom_key = static_cast<uint32_t>(dom_key);
@@ -434,7 +474,7 @@ void TypeNextChar(content::WebContents* wc,
       FROM_HERE,
       base::BindOnce(
           [](content::WebContents* wc, int key_code, ui::DomKey dk,
-             std::shared_ptr<TypeState> st, ToolResultCallback cb) {
+             int mods, std::shared_ptr<TypeState> st, ToolResultCallback cb) {
             auto* rwhv = wc->GetRenderWidgetHostView();
             if (!rwhv) {
               std::move(cb).Run(TextContent("No render view"), true);
@@ -443,7 +483,7 @@ void TypeNextChar(content::WebContents* wc,
 
             input::NativeWebKeyboardEvent up(
                 blink::WebInputEvent::Type::kKeyUp,
-                blink::WebInputEvent::kNoModifiers,
+                mods,
                 ui::EventTimeForNow());
             up.windows_key_code = key_code;
             up.dom_key = static_cast<uint32_t>(dk);
@@ -458,8 +498,8 @@ void TypeNextChar(content::WebContents* wc,
                                std::move(st), std::move(cb)),
                 base::Milliseconds(next_delay));
           },
-          base::Unretained(wc), windows_key_code, dom_key, std::move(state),
-          std::move(callback)),
+          base::Unretained(wc), windows_key_code, dom_key, modifiers,
+          std::move(state), std::move(callback)),
       base::Milliseconds(up_delay));
 }
 
@@ -620,6 +660,23 @@ void HandleSelectOption(content::WebContents* web_contents,
     return;
   }
 
+  int node_id = 0;
+  if (!base::StringToInt(*ref, &node_id)) {
+    std::move(callback).Run(TextContent("Invalid ref"), true);
+    return;
+  }
+
+  auto* rfh = web_contents->GetPrimaryMainFrame();
+  if (!rfh) {
+    std::move(callback).Run(TextContent("No active frame"), true);
+    return;
+  }
+
+  ui::AXActionData focus_action;
+  focus_action.action = ax::mojom::Action::kFocus;
+  focus_action.target_node_id = static_cast<ui::AXNodeID>(node_id);
+  rfh->AccessibilityPerformAction(focus_action);
+
   std::string js_values;
   for (const auto& v : *values) {
     const std::string* s = v.GetIfString();
@@ -630,16 +687,16 @@ void HandleSelectOption(content::WebContents* web_contents,
 
   std::string expression =
       "(() => {"
+      "  const el = document.activeElement;"
+      "  if (!el || el.tagName !== 'SELECT')"
+      "    return 'Error: focused element is not a select';"
       "  const vals = [" +
       js_values +
       "];"
-      "  const selects = document.querySelectorAll('select');"
-      "  for (const sel of selects) {"
-      "    Array.from(sel.options).forEach(o => {"
-      "      o.selected = vals.includes(o.value);"
-      "    });"
-      "    sel.dispatchEvent(new Event('change', {bubbles: true}));"
-      "  }"
+      "  Array.from(el.options).forEach(o => {"
+      "    o.selected = vals.includes(o.value);"
+      "  });"
+      "  el.dispatchEvent(new Event('change', {bubbles: true}));"
       "  return 'Selected ' + vals.length + ' option(s)';"
       "})()";
 
@@ -710,6 +767,25 @@ void HandleDragAndDrop(content::WebContents* web_contents,
                           rwhv->GetRenderWidgetHost(),
                           blink::WebInputEvent::Type::kMouseDown, sx, sy);
 
+                      auto* rfh = wc->GetPrimaryMainFrame();
+                      if (rfh) {
+                        std::string js =
+                            "(() => {"
+                            "  var el = document.elementFromPoint(" +
+                            base::NumberToString(static_cast<int>(sx)) + "," +
+                            base::NumberToString(static_cast<int>(sy)) +
+                            ");"
+                            "  if (el) {"
+                            "    var dt = new DataTransfer();"
+                            "    el.dispatchEvent(new DragEvent('dragstart', {bubbles:true, dataTransfer:dt}));"
+                            "  }"
+                            "})()";
+                        rfh->ExecuteJavaScriptForTests(
+                            base::UTF8ToUTF16(js),
+                            base::NullCallback(),
+                            content::ISOLATED_WORLD_ID_GLOBAL);
+                      }
+
                       auto drag_path = GenerateMousePath(sx, sy, ex, ey);
                       base::SequencedTaskRunner::GetCurrentDefault()
                           ->PostDelayedTask(
@@ -739,6 +815,27 @@ void HandleDragAndDrop(content::WebContents* web_contents,
                                                   blink::WebInputEvent::Type::
                                                       kMouseUp,
                                                   ex, ey);
+
+                                              auto* rfh = wc->GetPrimaryMainFrame();
+                                              if (rfh) {
+                                                std::string js =
+                                                    "(() => {"
+                                                    "  var el = document.elementFromPoint(" +
+                                                    base::NumberToString(static_cast<int>(ex)) + "," +
+                                                    base::NumberToString(static_cast<int>(ey)) +
+                                                    ");"
+                                                    "  if (el) {"
+                                                    "    var dt = new DataTransfer();"
+                                                    "    el.dispatchEvent(new DragEvent('drop', {bubbles:true, dataTransfer:dt}));"
+                                                    "    el.dispatchEvent(new DragEvent('dragend', {bubbles:true, dataTransfer:dt}));"
+                                                    "  }"
+                                                    "})()";
+                                                rfh->ExecuteJavaScriptForTests(
+                                                    base::UTF8ToUTF16(js),
+                                                    base::NullCallback(),
+                                                    content::ISOLATED_WORLD_ID_GLOBAL);
+                                              }
+
                                               std::move(cb).Run(
                                                   TextContent("Drag and drop "
                                                               "completed"),
@@ -867,7 +964,12 @@ void RegisterInteractionTools(MCPServer& server) {
       "browser_select_option",
       "Select option(s) in a select element",
       SchemaObject(
-          base::DictValue().Set("ref", SchemaString("Element ref from accessibility snapshot")),
+          base::DictValue()
+              .Set("ref", SchemaString("Element ref from accessibility snapshot"))
+              .Set("values", base::DictValue()
+                  .Set("type", "array")
+                  .Set("description", "Option values to select")
+                  .Set("items", base::DictValue().Set("type", "string"))),
           {"ref", "values"}),
       base::BindRepeating(&HandleSelectOption),
   });
