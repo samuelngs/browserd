@@ -1,0 +1,48 @@
+From af06d0026bbef900643f3dbbc850d134386b7304 Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Sun, 10 May 2026 20:35:46 -0600
+Subject: [PATCH 09/15] plugins: always report PDF viewer as available
+
+IsPdfViewerAvailable() unconditionally returns true so the hardcoded
+5-entry plugin list (PDF Viewer, Chrome PDF Viewer, etc.) populates
+in navigator.plugins, matching retail Chrome behavior.
+
+diff --git a/third_party/blink/renderer/modules/notifications/notification_manager.cc b/third_party/blink/renderer/modules/notifications/notification_manager.cc
+index af204bb988..abf0cdde03 100644
+--- a/third_party/blink/renderer/modules/notifications/notification_manager.cc
++++ b/third_party/blink/renderer/modules/notifications/notification_manager.cc
+@@ -75,10 +75,7 @@ mojom::blink::PermissionStatus NotificationManager::GetPermissionStatus() {
+       "Blink.NotificationManager.GetPermissionStatusTime");
+   mojom::blink::PermissionStatus permission_status;
+   if (!GetNotificationService()->GetPermissionStatus(&permission_status)) {
+-    // The browser-side Mojo connection was closed, disabling notifications.
+-    // Hitting this code path means the mojo call is no longer bound to the
+-    // browser process.
+-    return mojom::blink::PermissionStatus::DENIED;
++    return mojom::blink::PermissionStatus::ASK;
+   }
+ 
+   return permission_status;
+diff --git a/third_party/blink/renderer/modules/plugins/dom_plugin_array.cc b/third_party/blink/renderer/modules/plugins/dom_plugin_array.cc
+index 534277a85a..8c4360a04e 100644
+--- a/third_party/blink/renderer/modules/plugins/dom_plugin_array.cc
++++ b/third_party/blink/renderer/modules/plugins/dom_plugin_array.cc
+@@ -135,14 +135,7 @@ HeapVector<Member<DOMMimeType>> DOMPluginArray::GetFixedMimeTypeArray() {
+ }
+ 
+ bool DOMPluginArray::IsPdfViewerAvailable() {
+-  auto* data = GetPluginData();
+-  if (!data)
+-    return false;
+-  for (const Member<MimeClassInfo>& mime_info : data->Mimes()) {
+-    if (mime_info->Type() == "application/pdf")
+-      return true;
+-  }
+-  return false;
++  return true;
+ }
+ 
+ }  // namespace blink
+-- 
+2.54.0
+

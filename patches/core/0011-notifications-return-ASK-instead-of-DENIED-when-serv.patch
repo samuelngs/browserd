@@ -1,0 +1,26 @@
+From a7cb6b3a6b4dd25381bae593df74f04526ac7a6a Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Sun, 10 May 2026 20:40:22 -0600
+Subject: [PATCH 11/15] notifications: return ASK instead of DENIED when
+ service unavailable
+
+When the notification service is not available (headless mode), return
+ASK status instead of DENIED from both the renderer and browser side.
+Maps Notification.permission to 'default' instead of 'denied'.
+
+diff --git a/content/browser/notifications/blink_notification_service_impl.cc b/content/browser/notifications/blink_notification_service_impl.cc
+index 2fd342198d..05fcb89f83 100644
+--- a/content/browser/notifications/blink_notification_service_impl.cc
++++ b/content/browser/notifications/blink_notification_service_impl.cc
+@@ -126,7 +126,7 @@ void BlinkNotificationServiceImpl::GetPermissionStatus(
+   DCHECK_CURRENTLY_ON(BrowserThread::UI);
+   if (!browser_context_ ||
+       !browser_context_->GetPlatformNotificationService()) {
+-    std::move(callback).Run(blink::mojom::PermissionStatus::DENIED);
++    std::move(callback).Run(blink::mojom::PermissionStatus::ASK);
+     return;
+   }
+ 
+-- 
+2.54.0
+

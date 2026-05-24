@@ -1,0 +1,35 @@
+import("//build/config/compiler/compiler.gni")
+
+executable("browserd") {
+  configs -= [ "//build/config/compiler:thinlto_optimize_default" ]
+  configs += [ "//build/config/compiler:thinlto_optimize_max" ]
+
+  sources = [
+    "main.cc",
+  ]
+
+  deps = [
+    ":browserd_lib",
+    "//components/os_crypt/common:switches",
+    "//content/public/app",
+    "//headless:headless_shell_lib",
+    "//sandbox/policy",
+    "//ui/gl",
+  ]
+}
+
+source_set("browserd_lib") {
+  sources = [
+    "app.cc",
+    "app.h",
+  ]
+
+  deps = [
+    "//browserd/mcp",
+    "//base",
+    "//content/public/browser",
+    "//content/public/common",
+    "//headless:headless_shell_lib",
+    "//ui/gfx/geometry",
+  ]
+}

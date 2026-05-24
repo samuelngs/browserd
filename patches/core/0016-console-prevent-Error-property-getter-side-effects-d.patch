@@ -1,0 +1,86 @@
+From fdaa9412382fa9421f2fcfa55059e6dd00aefd56 Mon Sep 17 00:00:00 2001
+From: Samuel Ngs <samuelngs@users.noreply.github.com>
+Date: Mon, 11 May 2026 18:53:22 -0600
+Subject: [PATCH] console: prevent Error property getter side-effects during
+ serialization
+
+V8ValueStringBuilder::append() calls value->ToString() on NativeError
+objects, which invokes Error.prototype.toString() and triggers any
+user-defined getters on 'message' or 'name' properties. This is a
+detectable side-effect exploited by bot detection (e.g. Fingerprint Pro)
+to identify automation.
+
+Handle NativeError separately: use GetConstructorName() for the error
+name and read the 'message' property via GetOwnPropertyDescriptor() to
+extract only data property values without invoking accessors.
+---
+ v8/src/inspector/v8-console-message.cc | 25 ++++++++++++++++++++++++-
+ v8/src/inspector/value-mirror.cc       |  8 +++++---
+ 2 files changed, 29 insertions(+), 4 deletions(-)
+
+diff --git a/v8/src/inspector/v8-console-message.cc b/v8/src/inspector/v8-console-message.cc
+index 567c92ad..9a378287 100644
+--- a/v8/src/inspector/v8-console-message.cc
++++ b/v8/src/inspector/v8-console-message.cc
+@@ -116,8 +116,31 @@ class V8ValueStringBuilder {
+       m_builder.append("[object Proxy]");
+       return true;
+     }
++    if (value->IsNativeError()) {
++      v8::Local<v8::Object> object = value.As<v8::Object>();
++      m_builder.append(
++          toProtocolString(m_isolate, object->GetConstructorName()));
++      v8::Local<v8::String> msgKey =
++          v8::String::NewFromUtf8Literal(m_isolate, "message");
++      v8::Local<v8::Value> desc;
++      if (object->GetOwnPropertyDescriptor(m_context, msgKey)
++              .ToLocal(&desc) &&
++          desc->IsObject()) {
++        v8::Local<v8::Value> val;
++        if (desc.As<v8::Object>()
++                ->Get(m_context,
++                      v8::String::NewFromUtf8Literal(m_isolate, "value"))
++                .ToLocal(&val) &&
++            val->IsString() && val.As<v8::String>()->Length() > 0) {
++          m_builder.append(": ");
++          m_builder.append(
++              toProtocolString(m_isolate, val.As<v8::String>()));
++        }
++      }
++      return true;
++    }
+     if (value->IsObject() && !value->IsDate() && !value->IsFunction() &&
+-        !value->IsNativeError() && !value->IsRegExp()) {
++        !value->IsRegExp()) {
+       v8::Local<v8::Object> object = value.As<v8::Object>();
+       v8::Local<v8::String> stringValue;
+       if (object->ObjectProtoToString(m_context).ToLocal(&stringValue))
+diff --git a/v8/src/inspector/value-mirror.cc b/v8/src/inspector/value-mirror.cc
+index 2c52c546..5ff3e780 100644
+--- a/v8/src/inspector/value-mirror.cc
++++ b/v8/src/inspector/value-mirror.cc
+@@ -270,7 +270,9 @@ v8::MaybeLocal<v8::Value> getErrorProperty(v8::Local<v8::Context> context,
+     tryCatch.Reset();
+     return object->Get(context, name);
+   }
+-  if (!descriptor->IsObject()) return object->Get(context, name);
++  if (!descriptor->IsObject()) {
++    return object->Get(context, name);
++  }
+ 
+   v8::Local<v8::Object> descriptorObject = descriptor.As<v8::Object>();
+   v8::Local<v8::Value> getDescriptor;
+@@ -287,8 +289,8 @@ v8::MaybeLocal<v8::Value> getErrorProperty(v8::Local<v8::Context> context,
+ 
+   if (getDescriptor->IsFunction()) {
+     v8::Local<v8::Function> function = getDescriptor.As<v8::Function>();
+-    if (deepBoundFunction(function)->ScriptId() !=
+-        v8::UnboundScript::kNoScriptId) {
++    int scriptId = deepBoundFunction(function)->ScriptId();
++    if (scriptId != v8::UnboundScript::kNoScriptId) {
+       return v8::MaybeLocal<v8::Value>();
+     }
+   }
+-- 
+2.54.0
+

@@ -1,0 +1,17 @@
+0001-webdriver-return-false-unconditionally.patch
+0002-automation-infobar-disable-controlled-by-automated-t.patch
+0003-useragent-strip-HeadlessChrome-token-from-UA-and-bra.patch
+0004-cdp-disable-setAutomationOverride-side-effects.patch
+0005-automation-disable-AutomationControlled-from-headles.patch
+0006-devtools-remove-browser-level-DevToolsAgentHost-crea.patch
+0007-chrome-inject-chrome-object-via-native-V8-FunctionTe.patch
+0008-brand-use-Google-Chrome-for-Sec-CH-UA-brand-list.patch
+0009-plugins-always-report-PDF-viewer-as-available.patch
+0010-window-add-browser-chrome-offset-to-outerHeight.patch
+0011-notifications-return-ASK-instead-of-DENIED-when-serv.patch
+0012-window-set-default-viewport-to-1920x942-maximized-on.patch
+0013-netinfo-report-realistic-RTT-when-network-quality-un.patch
+0014-window-preserve-screen-position-in-headless-SetBound.patch
+0015-window-re-apply-frame-bounds-on-RenderWidgetHostView.patch
+0016-console-prevent-Error-property-getter-side-effects-d.patch
+0017-canvas-apply-deterministic-noise-to-getImageData-pix.patch

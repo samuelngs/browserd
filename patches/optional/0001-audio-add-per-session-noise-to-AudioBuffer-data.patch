@@ -1,0 +1,52 @@
+From b4488d0e08871d3f923d8b7969e1aeae459ed77e Mon Sep 17 00:00:00 2001
+From: Samuel Ngs <samuelngs@users.noreply.github.com>
+Date: Mon, 11 May 2026 20:31:38 -0600
+Subject: [PATCH] audio: add per-session noise to AudioBuffer data from
+ AudioBus
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Apply deterministic noise (±1e-7 per sample) when AudioBuffer copies
+data from an AudioBus. Uses a static random seed per process, so audio
+fingerprint varies between sessions but remains consistent within one.
+Prevents cross-session tracking via OfflineAudioContext rendering.
+---
+ .../renderer/modules/webaudio/audio_buffer.cc      | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+index 7084a5303e..81096b54ae 100644
+--- a/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
++++ b/third_party/blink/renderer/modules/webaudio/audio_buffer.cc
+@@ -32,6 +32,7 @@
+ 
+ #include "base/compiler_specific.h"
+ #include "base/containers/span.h"
++#include "base/rand_util.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_buffer_options.h"
+ #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
+ #include "third_party/blink/renderer/platform/audio/audio_bus.h"
+@@ -193,6 +194,19 @@ AudioBuffer::AudioBuffer(AudioBus* bus)
+       return;
+     }
+     channel_data_array->AsSpan().copy_from(bus->Channel(i)->Span());
++    {
++      static const uint64_t kAudioSeed = base::RandUint64();
++      uint64_t h = kAudioSeed ^ (static_cast<uint64_t>(i) * 0x9E3779B97F4A7C15ULL);
++      auto span = channel_data_array->AsSpan();
++      for (size_t j = 0; j < span.size(); ++j) {
++        h ^= h >> 17;
++        h *= 0xBF58476D1CE4E5B9ULL;
++        h ^= h >> 31;
++        float noise = static_cast<float>(static_cast<int64_t>(h & 0xFF) - 128) *
++                      1e-7f;
++        span[j] += noise;
++      }
++    }
+     channels_.push_back(channel_data_array);
+   }
+ }
+-- 
+2.54.0
+

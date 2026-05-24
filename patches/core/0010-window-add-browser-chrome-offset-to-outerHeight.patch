@@ -1,0 +1,28 @@
+From 824ad027040753d2e1922a3b4a9217fe3d5c0869 Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Sun, 10 May 2026 20:40:20 -0600
+Subject: [PATCH 10/15] window: add browser chrome offset to outerHeight
+
+When outerHeight equals innerHeight (no browser chrome), add 88px
+offset to simulate macOS Chrome toolbar + tab bar height. Prevents
+outerHeight === innerHeight detection used by bot detectors.
+
+diff --git a/third_party/blink/renderer/core/frame/local_dom_window.cc b/third_party/blink/renderer/core/frame/local_dom_window.cc
+index 51f03729c2..9d1ec39357 100644
+--- a/third_party/blink/renderer/core/frame/local_dom_window.cc
++++ b/third_party/blink/renderer/core/frame/local_dom_window.cc
+@@ -1592,7 +1592,10 @@ int LocalDOMWindow::outerHeight() const {
+         lroundf(chrome_client.RootWindowRect(*frame).height() *
+                 chrome_client.GetScreenInfo(*frame).device_scale_factor));
+   }
+-  return chrome_client.RootWindowRect(*frame).height();
++  int height = chrome_client.RootWindowRect(*frame).height();
++  if (height == innerHeight())
++    height += 88;
++  return height;
+ }
+ 
+ int LocalDOMWindow::outerWidth() const {
+-- 
+2.54.0
+

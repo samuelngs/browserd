@@ -1,0 +1,28 @@
+From c446ce2dc0931addfae2609651fe971986d44f48 Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Thu, 7 May 2026 10:59:40 -0600
+Subject: [PATCH 01/15] webdriver: return false unconditionally
+
+Prevents navigator.webdriver from revealing automation state.
+
+diff --git a/third_party/blink/renderer/core/frame/navigator.cc b/third_party/blink/renderer/core/frame/navigator.cc
+index 583f05f8dd..90a9a3a91b 100644
+--- a/third_party/blink/renderer/core/frame/navigator.cc
++++ b/third_party/blink/renderer/core/frame/navigator.cc
+@@ -98,12 +98,7 @@ bool Navigator::cookieEnabled() const {
+ }
+ 
+ bool Navigator::webdriver() const {
+-  if (RuntimeEnabledFeatures::AutomationControlledEnabled())
+-    return true;
+-
+-  bool automation_enabled = false;
+-  probe::ApplyAutomationOverride(GetExecutionContext(), automation_enabled);
+-  return automation_enabled;
++  return false;
+ }
+ 
+ String Navigator::GetAcceptLanguages() {
+-- 
+2.54.0
+

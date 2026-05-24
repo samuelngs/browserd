@@ -1,0 +1,453 @@
+From f8536f39e235cb460b15d93376b72da00c44a6ca Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Sun, 10 May 2026 20:24:10 -0600
+Subject: [PATCH 07/15] chrome: inject chrome object via native V8
+ FunctionTemplates
+
+Injects chrome.app, chrome.runtime, chrome.csi, chrome.loadTimes
+using native V8 API (FunctionTemplate/Object) instead of JS injection.
+Avoids toString/prototype detection vectors used by bot detectors.
+
+diff --git a/headless/BUILD.gn b/headless/BUILD.gn
+index c17b97a6ea..977e7fd889 100644
+--- a/headless/BUILD.gn
++++ b/headless/BUILD.gn
+@@ -245,6 +245,8 @@ source_set("headless_renderer") {
+   sources = [
+     "lib/renderer/allowlist.cc",
+     "lib/renderer/allowlist.h",
++    "lib/renderer/headless_chrome_object_injector.cc",
++    "lib/renderer/headless_chrome_object_injector.h",
+     "lib/renderer/headless_content_renderer_client.cc",
+     "lib/renderer/headless_content_renderer_client.h",
+   ]
+diff --git a/headless/lib/renderer/headless_chrome_object_injector.cc b/headless/lib/renderer/headless_chrome_object_injector.cc
+new file mode 100644
+index 0000000000..b0bec28873
+--- /dev/null
++++ b/headless/lib/renderer/headless_chrome_object_injector.cc
+@@ -0,0 +1,351 @@
++#include "headless/lib/renderer/headless_chrome_object_injector.h"
++
++#include "base/time/time.h"
++#include "content/public/renderer/render_frame.h"
++#include "v8/include/v8-context.h"
++#include "v8/include/v8-function.h"
++#include "v8/include/v8-isolate.h"
++#include "v8/include/v8-object.h"
++#include "v8/include/v8-primitive.h"
++#include "v8/include/v8-template.h"
++
++namespace headless {
++
++HeadlessChromeObjectInjector::HeadlessChromeObjectInjector(
++    content::RenderFrame* render_frame)
++    : content::RenderFrameObserver(render_frame) {}
++
++HeadlessChromeObjectInjector::~HeadlessChromeObjectInjector() = default;
++
++void HeadlessChromeObjectInjector::OnDestruct() {
++  delete this;
++}
++
++v8::Local<v8::Function> HeadlessChromeObjectInjector::CreateNativeFunction(
++    v8::Isolate* isolate,
++    v8::Local<v8::Context> context,
++    const char* name,
++    v8::FunctionCallback callback,
++    int length) {
++  v8::Local<v8::FunctionTemplate> tmpl =
++      v8::FunctionTemplate::New(isolate, callback);
++  tmpl->SetClassName(
++      v8::String::NewFromUtf8(isolate, name).ToLocalChecked());
++  tmpl->RemovePrototype();
++  tmpl->SetLength(length);
++  return tmpl->GetFunction(context).ToLocalChecked();
++}
++
++void HeadlessChromeObjectInjector::DidCreateScriptContext(
++    v8::Local<v8::Context> context,
++    int32_t world_id) {
++  if (world_id != 0) {
++    return;
++  }
++
++  v8::Isolate* isolate = v8::Isolate::GetCurrent();
++  v8::HandleScope handle_scope(isolate);
++  v8::Context::Scope context_scope(context);
++
++  v8::Local<v8::Object> global = context->Global();
++  v8::Local<v8::String> chrome_key =
++      v8::String::NewFromUtf8Literal(isolate, "chrome");
++
++  if (global->Has(context, chrome_key).FromMaybe(false)) {
++    return;
++  }
++
++  // chrome.app
++  v8::Local<v8::Object> app = v8::Object::New(isolate);
++  app->Set(context, v8::String::NewFromUtf8Literal(isolate, "isInstalled"),
++           v8::False(isolate))
++      .Check();
++  app->Set(context, v8::String::NewFromUtf8Literal(isolate, "getDetails"),
++           CreateNativeFunction(isolate, context, "getDetails", GetDetails))
++      .Check();
++  app->Set(
++         context, v8::String::NewFromUtf8Literal(isolate, "getIsInstalled"),
++         CreateNativeFunction(isolate, context, "getIsInstalled",
++                              GetIsInstalled))
++      .Check();
++  app->Set(context, v8::String::NewFromUtf8Literal(isolate, "installState"),
++           CreateNativeFunction(isolate, context, "installState", InstallState,
++                                1))
++      .Check();
++  app->Set(context, v8::String::NewFromUtf8Literal(isolate, "runningState"),
++           CreateNativeFunction(isolate, context, "runningState", RunningState))
++      .Check();
++
++  // chrome.runtime
++  v8::Local<v8::Object> runtime = v8::Object::New(isolate);
++  runtime
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "OnInstalledReason"),
++            v8::Object::New(isolate))
++      .Check();
++  runtime
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "OnRestartRequiredReason"),
++            v8::Object::New(isolate))
++      .Check();
++  runtime
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "PlatformArch"),
++            v8::Object::New(isolate))
++      .Check();
++  runtime
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "PlatformNaclArch"),
++            v8::Object::New(isolate))
++      .Check();
++  runtime
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "PlatformOs"),
++            v8::Object::New(isolate))
++      .Check();
++  runtime
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "RequestUpdateCheckStatus"),
++            v8::Object::New(isolate))
++      .Check();
++  runtime
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "connect"),
++            CreateNativeFunction(isolate, context, "connect", RuntimeConnect))
++      .Check();
++  runtime
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "id"),
++            v8::Undefined(isolate))
++      .Check();
++  runtime
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "sendMessage"),
++            CreateNativeFunction(isolate, context, "sendMessage",
++                                 RuntimeSendMessage))
++      .Check();
++
++  // chrome
++  v8::Local<v8::Object> chrome = v8::Object::New(isolate);
++  chrome->Set(context, v8::String::NewFromUtf8Literal(isolate, "app"), app)
++      .Check();
++  chrome
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "runtime"),
++            runtime)
++      .Check();
++  chrome
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "csi"),
++            CreateNativeFunction(isolate, context, "csi", Csi))
++      .Check();
++  chrome
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "loadTimes"),
++            CreateNativeFunction(isolate, context, "loadTimes", LoadTimes))
++      .Check();
++
++  global->Set(context, chrome_key, chrome).Check();
++}
++
++void HeadlessChromeObjectInjector::GetDetails(
++    const v8::FunctionCallbackInfo<v8::Value>& info) {
++  info.GetReturnValue().SetNull();
++}
++
++void HeadlessChromeObjectInjector::GetIsInstalled(
++    const v8::FunctionCallbackInfo<v8::Value>& info) {
++  info.GetReturnValue().Set(false);
++}
++
++void HeadlessChromeObjectInjector::InstallState(
++    const v8::FunctionCallbackInfo<v8::Value>& info) {
++  if (info.Length() > 0 && info[0]->IsFunction()) {
++    v8::Local<v8::Function> callback = info[0].As<v8::Function>();
++    v8::Local<v8::Context> context = info.GetIsolate()->GetCurrentContext();
++    v8::Local<v8::Value> args[] = {
++        v8::String::NewFromUtf8Literal(info.GetIsolate(), "disabled")};
++    std::ignore =
++        callback->Call(context, v8::Undefined(info.GetIsolate()), 1, args);
++  }
++}
++
++void HeadlessChromeObjectInjector::RunningState(
++    const v8::FunctionCallbackInfo<v8::Value>& info) {
++  info.GetReturnValue().Set(
++      v8::String::NewFromUtf8Literal(info.GetIsolate(), "cannot_run"));
++}
++
++void HeadlessChromeObjectInjector::RuntimeConnect(
++    const v8::FunctionCallbackInfo<v8::Value>& info) {
++  info.GetReturnValue().Set(v8::Object::New(info.GetIsolate()));
++}
++
++void HeadlessChromeObjectInjector::RuntimeSendMessage(
++    const v8::FunctionCallbackInfo<v8::Value>& info) {}
++
++void HeadlessChromeObjectInjector::Csi(
++    const v8::FunctionCallbackInfo<v8::Value>& info) {
++  v8::Isolate* isolate = info.GetIsolate();
++  v8::Local<v8::Context> context = isolate->GetCurrentContext();
++  v8::Local<v8::Object> global = context->Global();
++
++  double nav_start = 0;
++  double page_time = 0;
++
++  v8::Local<v8::Value> perf_val;
++  if (global
++          ->Get(context,
++                v8::String::NewFromUtf8Literal(isolate, "performance"))
++          .ToLocal(&perf_val) &&
++      perf_val->IsObject()) {
++    v8::Local<v8::Object> perf = perf_val.As<v8::Object>();
++    v8::Local<v8::Value> timing_val;
++    if (perf->Get(context, v8::String::NewFromUtf8Literal(isolate, "timing"))
++            .ToLocal(&timing_val) &&
++        timing_val->IsObject()) {
++      v8::Local<v8::Object> timing = timing_val.As<v8::Object>();
++      v8::Local<v8::Value> ns_val;
++      if (timing
++              ->Get(context, v8::String::NewFromUtf8Literal(
++                                 isolate, "navigationStart"))
++              .ToLocal(&ns_val) &&
++          ns_val->IsNumber()) {
++        nav_start = ns_val.As<v8::Number>()->Value();
++      }
++    }
++    v8::Local<v8::Value> now_fn;
++    if (perf->Get(context, v8::String::NewFromUtf8Literal(isolate, "now"))
++            .ToLocal(&now_fn) &&
++        now_fn->IsFunction()) {
++      v8::Local<v8::Value> now_val;
++      if (now_fn.As<v8::Function>()
++              ->Call(context, perf, 0, nullptr)
++              .ToLocal(&now_val) &&
++          now_val->IsNumber()) {
++        page_time = now_val.As<v8::Number>()->Value();
++      }
++    }
++  }
++
++  if (nav_start == 0) {
++    nav_start = base::Time::Now().InMillisecondsFSinceUnixEpoch();
++  }
++
++  v8::Local<v8::Object> result = v8::Object::New(isolate);
++  result
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "onloadT"),
++            v8::Number::New(isolate, nav_start))
++      .Check();
++  result
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "startE"),
++            v8::Number::New(isolate, nav_start))
++      .Check();
++  result
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "pageT"),
++            v8::Number::New(isolate, page_time))
++      .Check();
++  result
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "tran"),
++            v8::Integer::New(isolate, 15))
++      .Check();
++
++  info.GetReturnValue().Set(result);
++}
++
++void HeadlessChromeObjectInjector::LoadTimes(
++    const v8::FunctionCallbackInfo<v8::Value>& info) {
++  v8::Isolate* isolate = info.GetIsolate();
++  v8::Local<v8::Context> context = isolate->GetCurrentContext();
++  v8::Local<v8::Object> global = context->Global();
++
++  double nav_start_sec = 0;
++
++  v8::Local<v8::Value> perf_val;
++  if (global
++          ->Get(context,
++                v8::String::NewFromUtf8Literal(isolate, "performance"))
++          .ToLocal(&perf_val) &&
++      perf_val->IsObject()) {
++    v8::Local<v8::Object> perf = perf_val.As<v8::Object>();
++    v8::Local<v8::Value> timing_val;
++    if (perf->Get(context, v8::String::NewFromUtf8Literal(isolate, "timing"))
++            .ToLocal(&timing_val) &&
++        timing_val->IsObject()) {
++      v8::Local<v8::Object> timing = timing_val.As<v8::Object>();
++      v8::Local<v8::Value> ns_val;
++      if (timing
++              ->Get(context, v8::String::NewFromUtf8Literal(
++                                 isolate, "navigationStart"))
++              .ToLocal(&ns_val) &&
++          ns_val->IsNumber()) {
++        nav_start_sec = ns_val.As<v8::Number>()->Value() / 1000.0;
++      }
++    }
++  }
++
++  if (nav_start_sec == 0) {
++    nav_start_sec = base::Time::Now().InSecondsFSinceUnixEpoch();
++  }
++
++  v8::Local<v8::Object> result = v8::Object::New(isolate);
++  result
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "commitLoadTime"),
++            v8::Number::New(isolate, nav_start_sec))
++      .Check();
++  result
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "connectionInfo"),
++            v8::String::NewFromUtf8Literal(isolate, "h3"))
++      .Check();
++  result
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "finishDocumentLoadTime"),
++            v8::Number::New(isolate, nav_start_sec + 0.1))
++      .Check();
++  result
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "finishLoadTime"),
++            v8::Number::New(isolate, nav_start_sec + 0.2))
++      .Check();
++  result
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "firstPaintAfterLoadTime"),
++            v8::Number::New(isolate, 0))
++      .Check();
++  result
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "firstPaintTime"),
++            v8::Number::New(isolate, nav_start_sec + 0.05))
++      .Check();
++  result
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "navigationType"),
++            v8::String::NewFromUtf8Literal(isolate, "Other"))
++      .Check();
++  result
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "npnNegotiatedProtocol"),
++            v8::String::NewFromUtf8Literal(isolate, "h3"))
++      .Check();
++  result
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "requestTime"),
++            v8::Number::New(isolate, nav_start_sec))
++      .Check();
++  result
++      ->Set(context, v8::String::NewFromUtf8Literal(isolate, "startLoadTime"),
++            v8::Number::New(isolate, nav_start_sec))
++      .Check();
++  result
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate,
++                                           "wasAlternateProtocolAvailable"),
++            v8::False(isolate))
++      .Check();
++  result
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "wasFetchedViaSpdy"),
++            v8::True(isolate))
++      .Check();
++  result
++      ->Set(context,
++            v8::String::NewFromUtf8Literal(isolate, "wasNpnNegotiated"),
++            v8::True(isolate))
++      .Check();
++
++  info.GetReturnValue().Set(result);
++}
++
++}  // namespace headless
+diff --git a/headless/lib/renderer/headless_chrome_object_injector.h b/headless/lib/renderer/headless_chrome_object_injector.h
+new file mode 100644
+index 0000000000..e64660b3f5
+--- /dev/null
++++ b/headless/lib/renderer/headless_chrome_object_injector.h
+@@ -0,0 +1,44 @@
++#ifndef HEADLESS_LIB_RENDERER_HEADLESS_CHROME_OBJECT_INJECTOR_H_
++#define HEADLESS_LIB_RENDERER_HEADLESS_CHROME_OBJECT_INJECTOR_H_
++
++#include "content/public/renderer/render_frame_observer.h"
++#include "v8/include/v8-forward.h"
++#include "v8/include/v8-function-callback.h"
++
++namespace headless {
++
++class HeadlessChromeObjectInjector : public content::RenderFrameObserver {
++ public:
++  explicit HeadlessChromeObjectInjector(content::RenderFrame* render_frame);
++  ~HeadlessChromeObjectInjector() override;
++
++  HeadlessChromeObjectInjector(const HeadlessChromeObjectInjector&) = delete;
++  HeadlessChromeObjectInjector& operator=(const HeadlessChromeObjectInjector&) =
++      delete;
++
++  void DidCreateScriptContext(v8::Local<v8::Context> context,
++                              int32_t world_id) override;
++  void OnDestruct() override;
++
++ private:
++  static v8::Local<v8::Function> CreateNativeFunction(
++      v8::Isolate* isolate,
++      v8::Local<v8::Context> context,
++      const char* name,
++      v8::FunctionCallback callback,
++      int length = 0);
++
++  static void GetDetails(const v8::FunctionCallbackInfo<v8::Value>& info);
++  static void GetIsInstalled(const v8::FunctionCallbackInfo<v8::Value>& info);
++  static void InstallState(const v8::FunctionCallbackInfo<v8::Value>& info);
++  static void RunningState(const v8::FunctionCallbackInfo<v8::Value>& info);
++  static void RuntimeConnect(const v8::FunctionCallbackInfo<v8::Value>& info);
++  static void RuntimeSendMessage(
++      const v8::FunctionCallbackInfo<v8::Value>& info);
++  static void Csi(const v8::FunctionCallbackInfo<v8::Value>& info);
++  static void LoadTimes(const v8::FunctionCallbackInfo<v8::Value>& info);
++};
++
++}  // namespace headless
++
++#endif  // HEADLESS_LIB_RENDERER_HEADLESS_CHROME_OBJECT_INJECTOR_H_
+diff --git a/headless/lib/renderer/headless_content_renderer_client.cc b/headless/lib/renderer/headless_content_renderer_client.cc
+index 3b96bfd0a5..f0cbf6f1f6 100644
+--- a/headless/lib/renderer/headless_content_renderer_client.cc
++++ b/headless/lib/renderer/headless_content_renderer_client.cc
+@@ -12,6 +12,7 @@
+ #include "content/public/common/web_identity.h"
+ #include "content/public/renderer/render_thread.h"
+ #include "headless/lib/common/headless_features.h"
++#include "headless/lib/renderer/headless_chrome_object_injector.h"
+ #include "headless/public/switches.h"
+ #include "media/base/video_codecs.h"
+ #include "printing/buildflags/buildflags.h"
+@@ -105,6 +106,7 @@ HeadlessContentRendererClient::~HeadlessContentRendererClient() = default;
+ 
+ void HeadlessContentRendererClient::RenderFrameCreated(
+     content::RenderFrame* render_frame) {
++  new HeadlessChromeObjectInjector(render_frame);
+ #if BUILDFLAG(ENABLE_PRINTING)
+   new printing::PrintRenderFrameHelper(
+       render_frame, std::make_unique<HeadlessPrintRenderFrameHelperDelegate>());
+-- 
+2.54.0
+

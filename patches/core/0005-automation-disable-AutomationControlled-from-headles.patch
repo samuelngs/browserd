@@ -1,0 +1,49 @@
+From 3e41543ab5ec137f76129253363d0eab752e257e Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Sun, 10 May 2026 20:21:43 -0600
+Subject: [PATCH 05/15] automation: disable AutomationControlled from headless
+ and debugging flags
+
+Only --enable-automation should trigger AutomationControlled. Remove
+the mappings for --headless, --remote-debugging-pipe, and the custom
+--remote-debugging-port=0 check.
+
+diff --git a/content/child/runtime_features.cc b/content/child/runtime_features.cc
+index ee743c88aa..4050f36a54 100644
+--- a/content/child/runtime_features.cc
++++ b/content/child/runtime_features.cc
+@@ -433,8 +433,6 @@ void SetRuntimeFeaturesFromCommandLine(const base::CommandLine& command_line) {
+        switches::kDisableBackgroundTimerThrottling, false},
+       // End of Stable Features
+       {wrf::EnableAutomationControlled, switches::kEnableAutomation, true},
+-      {wrf::EnableAutomationControlled, switches::kHeadless, true},
+-      {wrf::EnableAutomationControlled, switches::kRemoteDebuggingPipe, true},
+       {wrf::EnableFileSystem, switches::kDisableFileSystem, false},
+       {wrf::EnableNetInfoDownlinkMax,
+        switches::kEnableNetworkInformationDownlinkMax, true},
+@@ -472,22 +470,6 @@ void SetRuntimeFeaturesFromCommandLine(const base::CommandLine& command_line) {
+     }
+   }
+ 
+-  // Set EnableAutomationControlled if the caller passes
+-  // --remote-debugging-port=0 on the command line. This means
+-  // the caller has requested an ephemeral port which is how ChromeDriver
+-  // launches the browser by default.
+-  // If the caller provides a specific port number, this is
+-  // more likely for attaching a debugger, so we should leave
+-  // EnableAutomationControlled unset to ensure the browser behaves as it does
+-  // when not under automation control.
+-  if (command_line.HasSwitch(switches::kRemoteDebuggingPort)) {
+-    std::string port_str =
+-        command_line.GetSwitchValueASCII(::switches::kRemoteDebuggingPort);
+-    int port;
+-    if (base::StringToInt(port_str, &port) && port == 0) {
+-      WebRuntimeFeatures::EnableAutomationControlled(true);
+-    }
+-  }
+ }
+ 
+ // Sets blink runtime features that depend on a combination
+-- 
+2.54.0
+

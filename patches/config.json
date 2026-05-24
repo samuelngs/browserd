@@ -1,0 +1,17 @@
+[
+  {
+    "patch_dir": "patches/core",
+    "repo": "src",
+    "description": "Automation flags, UA, CDP, WebGL, headless detection evasion"
+  },
+  {
+    "patch_dir": "patches/tls",
+    "repo": "src",
+    "description": "BoringSSL cipher/extension order, HTTP/2 fingerprint"
+  },
+  {
+    "patch_dir": "patches/optional",
+    "repo": "src",
+    "description": "Canvas, AudioContext, font enumeration noise"
+  }
+]

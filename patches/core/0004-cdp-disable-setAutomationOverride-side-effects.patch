@@ -1,0 +1,25 @@
+From ef72dd2d232e5267eb5c517fc2677728c65bc301 Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Thu, 7 May 2026 11:00:31 -0600
+Subject: [PATCH 04/15] cdp: disable setAutomationOverride side effects
+
+Makes Emulation.setAutomationOverride a no-op so CDP attachment
+cannot flip navigator.webdriver observable from page JavaScript.
+
+diff --git a/third_party/blink/renderer/core/inspector/inspector_emulation_agent.cc b/third_party/blink/renderer/core/inspector/inspector_emulation_agent.cc
+index 47a229290d..6e37fd5059 100644
+--- a/third_party/blink/renderer/core/inspector/inspector_emulation_agent.cc
++++ b/third_party/blink/renderer/core/inspector/inspector_emulation_agent.cc
+@@ -1049,9 +1049,6 @@ protocol::Response InspectorEmulationAgent::setDisabledImageTypes(
+ 
+ protocol::Response InspectorEmulationAgent::setAutomationOverride(
+     bool enabled) {
+-  if (enabled)
+-    InnerEnable();
+-  automation_override_.Set(enabled);
+   return protocol::Response::Success();
+ }
+ 
+-- 
+2.54.0
+

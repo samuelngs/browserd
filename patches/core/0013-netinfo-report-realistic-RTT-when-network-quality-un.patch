@@ -1,0 +1,28 @@
+From a555e0c11ebcfb3bfa8554d7fdae3d501dfedb34 Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Sun, 10 May 2026 22:19:47 -0600
+Subject: [PATCH 13/15] netinfo: report realistic RTT when network quality
+ unavailable
+
+When no network quality data is received from the browser process,
+NetworkStateNotifier::RoundRtt() returns 0ms. This reveals headless
+mode since real browsers always have non-zero RTT estimates. Return
+50ms as the default.
+
+diff --git a/third_party/blink/renderer/platform/network/network_state_notifier.cc b/third_party/blink/renderer/platform/network/network_state_notifier.cc
+index ed69c14c03..10f72c88b6 100644
+--- a/third_party/blink/renderer/platform/network/network_state_notifier.cc
++++ b/third_party/blink/renderer/platform/network/network_state_notifier.cc
+@@ -386,8 +386,7 @@ uint32_t NetworkStateNotifier::RoundRtt(
+     const String& host,
+     const std::optional<base::TimeDelta>& rtt) const {
+   if (!rtt.has_value()) {
+-    // RTT is unavailable. So, return the fastest value.
+-    return 0;
++    return 50;
+   }
+ 
+   // Limit the maximum reported value and the granularity to reduce
+-- 
+2.54.0
+

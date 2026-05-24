@@ -1,0 +1,103 @@
+From 3f5b455ba739d3929d72e5ad45199b9898331e42 Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Mon, 11 May 2026 07:16:44 -0600
+Subject: [PATCH 15/15] window: re-apply frame bounds on RenderWidgetHostView
+ swap
+
+When navigating cross-site, a new RenderWidgetHostView is created
+with default window_frame_in_screen_dip_ of (0,0,0,0). The
+initial SetWindowFrameInScreen PostTask from SetWebContentsBounds
+only fires once at init, so new RWHVs never receive the correct
+window position.
+
+Add HeadlessWindowBoundsApplier WebContentsObserver that watches
+for RenderViewHostChanged and RenderFrameHostChanged events and
+re-applies the window frame bounds to the new RWHV. This ensures
+window.screenX/screenY report correct values after navigation.
+
+diff --git a/headless/lib/browser/headless_platform_delegate_mac.mm b/headless/lib/browser/headless_platform_delegate_mac.mm
+index 9104708490..65be3db151 100644
+--- a/headless/lib/browser/headless_platform_delegate_mac.mm
++++ b/headless/lib/browser/headless_platform_delegate_mac.mm
+@@ -5,11 +5,15 @@
+ #include "headless/lib/browser/headless_platform_delegate.h"
+ 
+ #include "base/memory/weak_ptr.h"
++#include "base/supports_user_data.h"
+ #include "content/public/browser/browser_task_traits.h"
+ #include "content/public/browser/browser_thread.h"
+ #include "content/public/browser/popup_menu.h"
++#include "content/public/browser/render_frame_host.h"
++#include "content/public/browser/render_view_host.h"
+ #include "content/public/browser/render_widget_host_view.h"
+ #include "content/public/browser/web_contents.h"
++#include "content/public/browser/web_contents_observer.h"
+ #include "headless/lib/browser/headless_screen_mac.h"
+ #include "headless/lib/browser/headless_web_contents_impl.h"
+ #include "services/device/public/cpp/geolocation/system_geolocation_source_apple.h"
+@@ -28,6 +32,44 @@ const NSActivityOptions kActivityOptions =
+     ~(NSActivitySuddenTerminationDisabled |
+       NSActivityAutomaticTerminationDisabled);
+ 
++class HeadlessWindowBoundsApplier : public content::WebContentsObserver,
++                                   public base::SupportsUserData::Data {
++ public:
++  HeadlessWindowBoundsApplier(content::WebContents* web_contents,
++                              const gfx::Rect& bounds)
++      : content::WebContentsObserver(web_contents), bounds_(bounds) {}
++
++  void RenderViewHostChanged(content::RenderViewHost* old_host,
++                             content::RenderViewHost* new_host) override {
++    ApplyBounds();
++  }
++
++  void RenderFrameHostChanged(content::RenderFrameHost* old_host,
++                              content::RenderFrameHost* new_host) override {
++    ApplyBounds();
++  }
++
++ private:
++  void ApplyBounds() {
++    content::GetUIThreadTaskRunner({})->PostTask(
++        FROM_HERE,
++        base::BindOnce(
++            [](base::WeakPtr<content::WebContents> wc,
++               const gfx::Rect& bounds) {
++              if (wc) {
++                content::RenderWidgetHostView* view =
++                    wc->GetRenderWidgetHostView();
++                if (view) {
++                  view->SetWindowFrameInScreen(bounds);
++                }
++              }
++            },
++            web_contents()->GetWeakPtr(), bounds_));
++  }
++
++  gfx::Rect bounds_;
++};
++
+ void SetGeolocationSystemPermissionManagerInstance() {
+   // GeolocationSystemPermissionManager instance may be already set in tests.
+   if (!device::GeolocationSystemPermissionManager::GetInstance()) {
+@@ -94,6 +136,17 @@ void HeadlessPlatformDelegate::SetWebContentsBounds(
+             }
+           },
+           content_web_contents->GetWeakPtr(), bounds));
++
++  // Observe the WebContents to re-apply window frame bounds whenever the
++  // RenderWidgetHostView is swapped (e.g., cross-site navigation). The
++  // observer is self-owned via WebContentsUserData-like prevent double attach.
++  static const int kBoundsApplierKey = 0;
++  if (!content_web_contents->GetUserData(&kBoundsApplierKey)) {
++    auto applier = std::make_unique<HeadlessWindowBoundsApplier>(
++        content_web_contents, bounds);
++    content_web_contents->SetUserData(
++        &kBoundsApplierKey, std::move(applier));
++  }
+ }
+ 
+ ui::Compositor* HeadlessPlatformDelegate::GetCompositor(
+-- 
+2.54.0
+

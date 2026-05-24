@@ -1,0 +1,41 @@
+source_set("mcp") {
+  sources = [
+    "mcp_server.cc",
+    "mcp_server.h",
+    "mcp_tool.cc",
+    "mcp_tool.h",
+    "mcp_transport.cc",
+    "mcp_transport.h",
+    "tools/cookie_tools.cc",
+    "tools/cookie_tools.h",
+    "tools/evaluate_tools.cc",
+    "tools/evaluate_tools.h",
+    "tools/interaction_tools.cc",
+    "tools/interaction_tools.h",
+    "tools/navigation_tools.cc",
+    "tools/navigation_tools.h",
+    "tools/snapshot_tools.cc",
+    "tools/snapshot_tools.h",
+    "tools/tab_tools.cc",
+    "tools/tab_tools.h",
+    "tools/wait_tools.cc",
+    "tools/wait_tools.h",
+  ]
+
+  deps = [
+    "//base",
+    "//components/input",
+    "//components/viz/common",
+    "//content/public/browser",
+    "//headless:headless_shell_lib",
+    "//net",
+    "//services/network/public/mojom",
+    "//skia",
+    "//third_party/blink/public/common",
+    "//ui/accessibility",
+    "//ui/events",
+    "//ui/events:dom_keycode_converter",
+    "//ui/gfx",
+    "//ui/gfx/codec",
+  ]
+}

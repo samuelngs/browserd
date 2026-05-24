@@ -1,0 +1,71 @@
+From ffa39e0785385e6c47b2246e8fd35d0dab77baa3 Mon Sep 17 00:00:00 2001
+From: Samuel Ngs <samuelngs@users.noreply.github.com>
+Date: Mon, 11 May 2026 19:07:02 -0600
+Subject: [PATCH] canvas: apply deterministic noise to getImageData pixel
+ readback
+
+Activate Chromium's existing NoisePixels() infrastructure in the
+getImageData() path. Each ExecutionContext gets a random NoiseToken
+on first readback, producing per-session deterministic canvas
+fingerprint variation that prevents cross-session tracking while
+maintaining intra-session consistency.
+---
+ .../canvas2d/base_rendering_context_2d.cc     | 20 +++++++++++++++++++
+ 1 file changed, 20 insertions(+)
+
+diff --git a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+index 381f92b905..ecf10a0268 100644
+--- a/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
++++ b/third_party/blink/renderer/modules/canvas/canvas2d/base_rendering_context_2d.cc
+@@ -13,6 +13,7 @@
+ 
+ #include "base/check.h"
+ #include "base/check_op.h"
++#include "base/rand_util.h"
+ #include "base/location.h"
+ #include "base/memory/scoped_refptr.h"
+ #include "base/memory/weak_ptr.h"
+@@ -28,6 +29,7 @@
+ #include "cc/paint/record_paint_canvas.h"
+ #include "components/viz/common/resources/shared_image_format_utils.h"
+ #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
++#include "third_party/blink/public/common/fingerprinting_protection/noise_token.h"
+ #include "third_party/blink/public/common/metrics/document_update_reason.h"
+ #include "third_party/blink/public/mojom/devtools/console_message.mojom-blink-forward.h"
+ #include "third_party/blink/renderer/bindings/core/v8/v8_canvas_text_align.h"
+@@ -41,7 +43,9 @@
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_font_variant_caps.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_canvas_text_rendering.h"
+ #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_texture_format.h"
++#include "third_party/blink/renderer/core/canvas_interventions/noise_helper.h"
+ #include "third_party/blink/renderer/core/css/properties/computed_style_utils.h"
++#include "third_party/blink/renderer/core/execution_context/execution_context.h"
+ #include "third_party/blink/renderer/core/css/style_change_reason.h"
+ #include "third_party/blink/renderer/core/dom/events/event.h"
+ #include "third_party/blink/renderer/core/dom/node.h"
+@@ -532,6 +536,22 @@ ImageData* BaseRenderingContext2D::getImageDataInternal(
+           snapshot->PaintImageForCurrentFrame().GetSkImageInfo().bounds();
+       DCHECK(!bounds.intersect(SkIRect::MakeXYWH(sx, sy, sw, sh)));
+     }
++
++    if (read_pixels_successful && sw > 0 && sh > 0) {
++      auto* execution_context = GetTopExecutionContext();
++      std::optional<NoiseToken> token;
++      if (execution_context) {
++        token = execution_context->CanvasNoiseToken();
++      }
++      if (!token.has_value()) {
++        token = NoiseToken(base::RandUint64());
++        if (execution_context) {
++          execution_context->SetCanvasNoiseToken(token);
++        }
++      }
++      NoiseHash hash(*token);
++      NoisePixels(hash, image_data->RawByteSpan(), sw, sh);
++    }
+   }
+ 
+   return image_data;
+-- 
+2.54.0
+

@@ -1,0 +1,26 @@
+From 3cb363263f91a780c25eea7d4e8ca4093dbdd9a2 Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Sun, 10 May 2026 20:46:20 -0600
+Subject: [PATCH 12/15] window: set default viewport to 1920x942 (maximized on
+ 3840x2160 @2x)
+
+Matches a maximized Chrome window on a 3840x2160 display at 2x DPR:
+1920x1080 logical screen, 50px work area top, 88px browser chrome.
+Viewport = 1920 x (1080 - 50 - 88) = 1920 x 942.
+
+diff --git a/headless/public/headless_browser.h b/headless/public/headless_browser.h
+index 2669a6bb8c..487b734cae 100644
+--- a/headless/public/headless_browser.h
++++ b/headless/public/headless_browser.h
+@@ -109,7 +109,7 @@ struct HEADLESS_EXPORT HeadlessBrowser::Options {
+ 
+   // Default window size. This is also used to create the window tree host and
+   // as the headless screen size. Defaults to 800x600.
+-  gfx::Size window_size = gfx::Size(800, 600);
++  gfx::Size window_size = gfx::Size(1920, 942);
+ 
+   // Headless screen info specification.
+   std::string screen_info_spec;
+-- 
+2.54.0
+

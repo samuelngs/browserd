@@ -1,0 +1,40 @@
+From 8e017a9ebfce44aaa1b4145a0f01d18f33607d8e Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Sun, 10 May 2026 20:22:26 -0600
+Subject: [PATCH 06/15] devtools: remove browser-level DevToolsAgentHost
+ creation
+
+CreateForBrowser() sets up BrowserAutoAttacher which proactively
+creates agent hosts for all targets, leaving detectable CoreProbeSink
+instrumentation in renderers. MCP server attaches per-tab instead.
+
+diff --git a/headless/lib/browser/headless_browser_impl.cc b/headless/lib/browser/headless_browser_impl.cc
+index c2231763ad..aa4bdb593d 100644
+--- a/headless/lib/browser/headless_browser_impl.cc
++++ b/headless/lib/browser/headless_browser_impl.cc
+@@ -273,10 +273,6 @@ void HeadlessBrowserImpl::PreMainMessageLoopRun() {
+ 
+   platform_delegate_->Initialize(options_.value());
+ 
+-  // We don't support the tethering domain on this agent host.
+-  agent_host_ = content::DevToolsAgentHost::CreateForBrowser(
+-      nullptr, content::DevToolsAgentHost::CreateServerSocketCallback());
+-
+   platform_delegate_->Start();
+ 
+   std::move(on_start_callback_).Run(this);
+diff --git a/headless/lib/browser/headless_browser_impl.h b/headless/lib/browser/headless_browser_impl.h
+index 1d9ba1861d..732be000b4 100644
+--- a/headless/lib/browser/headless_browser_impl.h
++++ b/headless/lib/browser/headless_browser_impl.h
+@@ -127,7 +127,6 @@ class HEADLESS_EXPORT HeadlessBrowserImpl : public HeadlessBrowser {
+       browser_contexts_;
+   raw_ptr<HeadlessBrowserContext, AcrossTasksDanglingUntriaged>
+       default_browser_context_ = nullptr;
+-  scoped_refptr<content::DevToolsAgentHost> agent_host_;
+   std::unique_ptr<HeadlessRequestContextManager>
+       system_request_context_manager_;
+   base::OnceClosure quit_main_message_loop_;
+-- 
+2.54.0
+

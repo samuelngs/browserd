@@ -1,0 +1,10 @@
+is_debug = false
+is_official_build = true
+symbol_level = 0
+proprietary_codecs = true
+ffmpeg_branding = "Chrome"
+enable_widevine = true
+is_component_build = false
+blink_symbol_level = 0
+chrome_pgo_phase = 0
+root_extra_deps = [ "//browserd" ]

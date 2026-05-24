@@ -1,0 +1,26 @@
+From 62243174d25638316383e7417be8ea843e1aa336 Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Thu, 7 May 2026 10:59:51 -0600
+Subject: [PATCH 02/15] automation infobar: disable controlled by automated
+ test message
+
+Prevents the "Chrome is being controlled by automated test software"
+infobar from appearing regardless of command-line flags.
+
+diff --git a/chrome/browser/ui/startup/infobar_utils.cc b/chrome/browser/ui/startup/infobar_utils.cc
+index 505e8669ed..4677ce0596 100644
+--- a/chrome/browser/ui/startup/infobar_utils.cc
++++ b/chrome/browser/ui/startup/infobar_utils.cc
+@@ -83,8 +83,7 @@ bool ShouldShowBadFlagsSecurityWarnings() {
+ // This is a separate function to avoid accidentally reading the switch from
+ // `startup_command_line`.
+ bool IsAutomationEnabled() {
+-  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+-      switches::kEnableAutomation);
++  return false;
+ }
+ 
+ // This is a separate function to avoid accidentally reading the switch from
+-- 
+2.54.0
+

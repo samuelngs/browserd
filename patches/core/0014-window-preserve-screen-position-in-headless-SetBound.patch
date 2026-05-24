@@ -1,0 +1,31 @@
+From cd5b80d89c48fda311e765595640a91730553a7e Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Mon, 11 May 2026 07:16:34 -0600
+Subject: [PATCH 14/15] window: preserve screen position in headless SetBounds
+
+RenderWidgetHostViewMac::SetBounds() in headless mode calls
+OnWindowFrameInScreenChanged(rect) where rect is the content
+bounds with origin (0,0). This overwrites window_frame_in_screen_dip_
+and causes window.screenX/screenY to always report 0.
+
+Preserve the existing window frame origin when updating bounds
+so that the screen position set by SetWindowFrameInScreen persists
+across view resizes.
+
+diff --git a/content/browser/renderer_host/render_widget_host_view_mac.mm b/content/browser/renderer_host/render_widget_host_view_mac.mm
+index 63041c4311..3a6a895cd8 100644
+--- a/content/browser/renderer_host/render_widget_host_view_mac.mm
++++ b/content/browser/renderer_host/render_widget_host_view_mac.mm
+@@ -619,7 +619,8 @@ void RenderWidgetHostViewMac::SetBounds(const gfx::Rect& rect) {
+   // propagation. This occurs while running headless and causes problems with
+   // RenderDocument. See more details here: http://crbug.com/444226873.
+   if (IsHeadless()) {
+-    OnWindowFrameInScreenChanged(rect);
++    gfx::Rect frame(window_frame_in_screen_dip_.origin(), rect.size());
++    OnWindowFrameInScreenChanged(frame);
+   }
+ }
+ 
+-- 
+2.54.0
+
