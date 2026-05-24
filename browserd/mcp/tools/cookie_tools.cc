@@ -9,7 +9,9 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/browser/web_contents.h"
 #include "net/cookies/canonical_cookie.h"
+#include "net/cookies/cookie_access_result.h"
 #include "net/cookies/cookie_options.h"
+#include "net/cookies/cookie_partition_key_collection.h"
 #include "services/network/public/mojom/cookie_manager.mojom.h"
 
 namespace browserd {
@@ -23,6 +25,24 @@ network::mojom::CookieManager* GetCookieManager(
       ->GetCookieManagerForBrowserProcess();
 }
 
+void FormatCookieList(ToolResultCallback cb,
+                      const std::vector<net::CanonicalCookie>& cookies) {
+  if (cookies.empty()) {
+    std::move(cb).Run(TextContent("No cookies found"), false);
+    return;
+  }
+
+  std::string output;
+  for (const auto& cookie : cookies) {
+    output += cookie.Name() + "=" + cookie.Value();
+    output += " (domain=" + cookie.Domain();
+    output += ", path=" + cookie.Path() + ")";
+    output += "\n";
+  }
+
+  std::move(cb).Run(TextContent(output), false);
+}
+
 void HandleCookieList(content::WebContents* web_contents,
                       base::DictValue args,
                       ToolResultCallback callback) {
@@ -32,25 +52,31 @@ void HandleCookieList(content::WebContents* web_contents,
     return;
   }
 
-  cm->GetAllCookies(base::BindOnce(
-      [](ToolResultCallback cb,
-         const std::vector<net::CanonicalCookie>& cookies) {
-        if (cookies.empty()) {
-          std::move(cb).Run(TextContent("No cookies found"), false);
-          return;
-        }
-
-        std::string output;
-        for (const auto& cookie : cookies) {
-          output += cookie.Name() + "=" + cookie.Value();
-          output += " (domain=" + cookie.Domain();
-          output += ", path=" + cookie.Path() + ")";
-          output += "\n";
-        }
-
-        std::move(cb).Run(TextContent(output), false);
-      },
-      std::move(callback)));
+  const std::string* url_str = args.FindString("url");
+  if (url_str) {
+    GURL url(*url_str);
+    if (!url.is_valid()) {
+      std::move(callback).Run(TextContent("Invalid URL"), true);
+      return;
+    }
+    cm->GetCookieList(
+        url, net::CookieOptions::MakeAllInclusive(),
+        net::CookiePartitionKeyCollection(),
+        base::BindOnce(
+            [](ToolResultCallback cb,
+               const net::CookieAccessResultList& included,
+               const net::CookieAccessResultList&) {
+              std::vector<net::CanonicalCookie> cookies;
+              for (const auto& entry : included) {
+                cookies.push_back(entry.cookie);
+              }
+              FormatCookieList(std::move(cb), cookies);
+            },
+            std::move(callback)));
+  } else {
+    cm->GetAllCookies(
+        base::BindOnce(&FormatCookieList, std::move(callback)));
+  }
 }
 
 void HandleCookieGet(content::WebContents* web_contents,
