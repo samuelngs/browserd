@@ -114,8 +114,7 @@ void RegisterSnapshotTools(MCPServer& server) {
   server.RegisterTool({
       "browser_take_screenshot",
       "Take a screenshot of the current page",
-      SchemaObject(base::DictValue().Set("format", SchemaString("Image format: png or jpeg")),
-                   {}),
+      SchemaObject(base::DictValue()),
       base::BindRepeating(&HandleScreenshot),
   });
 }
