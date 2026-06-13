@@ -2,6 +2,7 @@
 #define BROWSERD_MCP_MCP_TRANSPORT_H_
 
 #include <string>
+#include <optional>
 
 #include "base/functional/callback.h"
 #include "base/memory/scoped_refptr.h"
@@ -11,29 +12,34 @@
 
 namespace browserd {
 
-class MCPTransport {
+using MCPResponseCallback =
+    base::OnceCallback<void(std::optional<base::DictValue> response)>;
+using MCPMessageCallback =
+    base::RepeatingCallback<void(base::DictValue message,
+                                 MCPResponseCallback response_callback)>;
+
+class MCPStdioTransport {
  public:
-  using MessageCallback =
-      base::RepeatingCallback<void(base::DictValue message)>;
   using CloseCallback = base::OnceClosure;
 
-  MCPTransport();
-  ~MCPTransport();
+  MCPStdioTransport();
+  ~MCPStdioTransport();
 
-  MCPTransport(const MCPTransport&) = delete;
-  MCPTransport& operator=(const MCPTransport&) = delete;
+  MCPStdioTransport(const MCPStdioTransport&) = delete;
+  MCPStdioTransport& operator=(const MCPStdioTransport&) = delete;
 
   void Start(scoped_refptr<base::SequencedTaskRunner> main_task_runner,
-             MessageCallback message_callback,
+             MCPMessageCallback message_callback,
              CloseCallback close_callback);
-  void SendMessage(const base::DictValue& message);
 
  private:
   void ReadLoop();
+  void SendResponse(std::optional<base::DictValue> response);
+  void SendMessage(const base::DictValue& message);
 
   base::Thread reader_thread_;
   scoped_refptr<base::SequencedTaskRunner> main_task_runner_;
-  MessageCallback message_callback_;
+  MCPMessageCallback message_callback_;
   CloseCallback close_callback_;
 };
 

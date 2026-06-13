@@ -1,6 +1,7 @@
 #include "browserd/mcp/mcp_server.h"
 
 #include <cmath>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -25,23 +26,35 @@ namespace browserd {
 
 MCPServer::PendingToolCall::PendingToolCall(std::string name,
                                             base::DictValue args,
-                                            base::Value id)
+                                            base::Value id,
+                                            MCPResponseCallback response_callback)
     : name(std::move(name)),
       args(std::move(args)),
-      id(std::move(id)) {}
+      id(std::move(id)),
+      response_callback(std::move(response_callback)) {}
 MCPServer::PendingToolCall::~PendingToolCall() = default;
 MCPServer::PendingToolCall::PendingToolCall(PendingToolCall&&) = default;
 
 MCPServer::MCPServer() = default;
 MCPServer::~MCPServer() = default;
 
-void MCPServer::Start(scoped_refptr<base::SequencedTaskRunner> task_runner) {
-  transport_.Start(task_runner,
-                   base::BindRepeating(&MCPServer::OnMessage,
-                                       base::Unretained(this)),
-                   base::BindOnce(&MCPServer::OnTransportClosed,
-                                  base::Unretained(this)));
+void MCPServer::Start(scoped_refptr<base::SequencedTaskRunner> task_runner,
+                      bool shutdown_on_stdio_close) {
+  task_runner_ = task_runner;
+  shutdown_on_stdio_close_ = shutdown_on_stdio_close;
+  stdio_transport_.Start(
+      std::move(task_runner), base::BindRepeating(&MCPServer::OnMessage,
+                                                  base::Unretained(this)),
+      base::BindOnce(&MCPServer::OnTransportClosed, base::Unretained(this)));
   StartBehaviorSimulation();
+}
+
+bool MCPServer::StartHttpTransport(const std::string& host,
+                                   uint16_t port,
+                                   const std::string& token) {
+  return http_transport_.Start(
+      task_runner_, host, port, token,
+      base::BindRepeating(&MCPServer::OnMessage, base::Unretained(this)));
 }
 
 void MCPServer::SetBrowser(headless::HeadlessBrowser* browser,
@@ -59,10 +72,11 @@ void MCPServer::InjectScriptOnNewDocument(const std::string& source) {
   injected_scripts_.push_back(source);
 }
 
-void MCPServer::ReadyToCommitNavigation(
-    content::NavigationHandle* navigation_handle) {
-  if (!navigation_handle->IsInPrimaryMainFrame())
+void MCPServer::DidFinishNavigation(content::NavigationHandle* navigation_handle) {
+  if (!navigation_handle->IsInPrimaryMainFrame() ||
+      !navigation_handle->HasCommitted()) {
     return;
+  }
 
   auto* rfh = navigation_handle->GetRenderFrameHost();
   if (!rfh)
@@ -79,43 +93,77 @@ void MCPServer::RegisterTool(MCPToolDef tool) {
   tools_.push_back(std::move(tool));
 }
 
-void MCPServer::OnMessage(base::DictValue message) {
+void MCPServer::OnMessage(base::DictValue message,
+                          MCPResponseCallback response_callback) {
   const std::string* method = message.FindString("method");
+  base::Value null_id;
+  const base::Value* id_ptr = message.Find("id");
+  const base::Value& id = id_ptr ? *id_ptr : null_id;
+
   if (!method) {
     LOG(WARNING) << "MCP message missing method";
+    if (id_ptr) {
+      SendError(id, -32600, "Invalid Request", std::move(response_callback));
+    } else {
+      SendNoResponse(std::move(response_callback));
+    }
     return;
   }
 
   const base::DictValue* params = message.FindDict("params");
   base::DictValue empty_params;
 
-  base::Value null_id;
-  const base::Value* id_ptr = message.Find("id");
-  const base::Value& id = id_ptr ? *id_ptr : null_id;
-
   if (*method == "initialize") {
-    HandleInitialize(params ? *params : empty_params, id);
+    if (id_ptr) {
+      HandleInitialize(params ? *params : empty_params, id,
+                       std::move(response_callback));
+    } else {
+      SendNoResponse(std::move(response_callback));
+    }
   } else if (*method == "notifications/initialized") {
     initialized_ = true;
+    SendNoResponse(std::move(response_callback));
   } else if (*method == "ping") {
-    SendResult(id, base::DictValue());
+    if (id_ptr) {
+      SendResult(id, base::DictValue(), std::move(response_callback));
+    } else {
+      SendNoResponse(std::move(response_callback));
+    }
   } else if (!initialized_) {
     if (id_ptr) {
-      SendError(id, -32002, "Server not initialized");
+      SendError(id, -32002, "Server not initialized",
+                std::move(response_callback));
+    } else {
+      SendNoResponse(std::move(response_callback));
     }
   } else if (*method == "tools/list") {
-    HandleToolsList(id);
+    if (id_ptr) {
+      HandleToolsList(id, std::move(response_callback));
+    } else {
+      SendNoResponse(std::move(response_callback));
+    }
   } else if (*method == "tools/call") {
-    HandleToolsCall(params ? *params : empty_params, id);
+    if (id_ptr) {
+      HandleToolsCall(params ? *params : empty_params, id,
+                      std::move(response_callback));
+    } else {
+      SendNoResponse(std::move(response_callback));
+    }
   } else {
     if (id_ptr) {
-      SendError(id, -32601, "Method not found: " + *method);
+      SendError(id, -32601, "Method not found: " + *method,
+                std::move(response_callback));
+    } else {
+      SendNoResponse(std::move(response_callback));
     }
   }
 }
 
 void MCPServer::HandleInitialize(const base::DictValue& params,
-                                 const base::Value& id) {
+                                 const base::Value& id,
+                                 MCPResponseCallback response_callback) {
+  initialized_ = true;
+
   base::DictValue result;
 
   base::DictValue server_info;
@@ -131,10 +179,11 @@ void MCPServer::HandleInitialize(const base::DictValue& params,
   capabilities.Set("tools", std::move(tools_cap));
   result.Set("capabilities", std::move(capabilities));
 
-  SendResult(id, std::move(result));
+  SendResult(id, std::move(result), std::move(response_callback));
 }
 
-void MCPServer::HandleToolsList(const base::Value& id) {
+void MCPServer::HandleToolsList(const base::Value& id,
+                                MCPResponseCallback response_callback) {
   base::DictValue result;
   base::ListValue tool_list;
 
@@ -147,21 +196,23 @@ void MCPServer::HandleToolsList(const base::Value& id) {
   }
 
   result.Set("tools", std::move(tool_list));
-  SendResult(id, std::move(result));
+  SendResult(id, std::move(result), std::move(response_callback));
 }
 
 void MCPServer::HandleToolsCall(const base::DictValue& params,
-                                const base::Value& id) {
+                                const base::Value& id,
+                                MCPResponseCallback response_callback) {
   const std::string* tool_name = params.FindString("name");
   if (!tool_name) {
-    SendError(id, -32602, "Missing tool name");
+    SendError(id, -32602, "Missing tool name", std::move(response_callback));
     return;
   }
 
   const base::DictValue* arguments = params.FindDict("arguments");
   base::DictValue args = arguments ? arguments->Clone() : base::DictValue();
 
-  tool_call_queue_.emplace(*tool_name, std::move(args), id.Clone());
+  tool_call_queue_.emplace(*tool_name, std::move(args), id.Clone(),
+                           std::move(response_callback));
 
   if (!tool_call_in_progress_) {
     ExecuteNextToolCall();
@@ -183,16 +234,19 @@ void MCPServer::ExecuteNextToolCall() {
       tool.handler.Run(
           web_contents_, std::move(call.args),
           base::BindOnce(&MCPServer::OnToolCallComplete,
-                         base::Unretained(this), std::move(call.id)));
+                         base::Unretained(this), std::move(call.id),
+                         std::move(call.response_callback)));
       return;
     }
   }
 
-  SendError(call.id, -32602, "Unknown tool: " + call.name);
+  SendError(call.id, -32602, "Unknown tool: " + call.name,
+            std::move(call.response_callback));
   ExecuteNextToolCall();
 }
 
 void MCPServer::OnToolCallComplete(base::Value id,
+                                   MCPResponseCallback response_callback,
                                    base::ListValue content,
                                    bool is_error) {
   base::DictValue result;
@@ -200,22 +254,30 @@ void MCPServer::OnToolCallComplete(base::Value id,
   if (is_error) {
     result.Set("isError", true);
   }
-  SendResult(id, std::move(result));
+  SendResult(id, std::move(result), std::move(response_callback));
 
   ExecuteNextToolCall();
 }
 
-void MCPServer::SendResult(const base::Value& id, base::DictValue result) {
+void MCPServer::SendNoResponse(MCPResponseCallback response_callback) {
+  std::move(response_callback).Run(std::nullopt);
+}
+
+void MCPServer::SendResult(const base::Value& id,
+                           base::DictValue result,
+                           MCPResponseCallback response_callback) {
   base::DictValue response;
   response.Set("jsonrpc", "2.0");
   response.Set("id", id.Clone());
   response.Set("result", std::move(result));
-  transport_.SendMessage(response);
+  std::move(response_callback).Run(
+      std::optional<base::DictValue>(std::move(response)));
 }
 
 void MCPServer::SendError(const base::Value& id,
                           int code,
-                          const std::string& message) {
+                          const std::string& message,
+                          MCPResponseCallback response_callback) {
   base::DictValue response;
   response.Set("jsonrpc", "2.0");
   response.Set("id", id.Clone());
@@ -225,7 +287,8 @@ void MCPServer::SendError(const base::Value& id,
   error.Set("message", message);
   response.Set("error", std::move(error));
 
-  transport_.SendMessage(response);
+  std::move(response_callback).Run(
+      std::optional<base::DictValue>(std::move(response)));
 }
 
 void MCPServer::StartBehaviorSimulation() {
@@ -284,9 +347,11 @@ void MCPServer::DispatchMouseMove() {
 }
 
 void MCPServer::OnTransportClosed() {
-  behavior_timer_.Stop();
-  if (browser_) {
-    browser_->Shutdown();
+  if (shutdown_on_stdio_close_) {
+    behavior_timer_.Stop();
+    if (browser_) {
+      browser_->Shutdown();
+    }
   }
 }
 

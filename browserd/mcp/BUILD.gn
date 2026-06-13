@@ -1,5 +1,7 @@
 source_set("mcp") {
   sources = [
+    "mcp_http_transport.cc",
+    "mcp_http_transport.h",
     "mcp_server.cc",
     "mcp_server.h",
     "mcp_tool.cc",
@@ -37,5 +39,6 @@ source_set("mcp") {
     "//ui/events:dom_keycode_converter",
     "//ui/gfx",
     "//ui/gfx/codec",
+    "//url",
   ]
 }

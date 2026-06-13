@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <string>
+#include <utility>
 
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
@@ -9,15 +10,15 @@
 
 namespace browserd {
 
-MCPTransport::MCPTransport() : reader_thread_("MCPStdinReader") {}
+MCPStdioTransport::MCPStdioTransport() : reader_thread_("MCPStdinReader") {}
 
-MCPTransport::~MCPTransport() {
+MCPStdioTransport::~MCPStdioTransport() {
   reader_thread_.Stop();
 }
 
-void MCPTransport::Start(
+void MCPStdioTransport::Start(
     scoped_refptr<base::SequencedTaskRunner> main_task_runner,
-    MessageCallback message_callback,
+    MCPMessageCallback message_callback,
     CloseCallback close_callback) {
   main_task_runner_ = std::move(main_task_runner);
   message_callback_ = std::move(message_callback);
@@ -25,17 +26,26 @@ void MCPTransport::Start(
 
   reader_thread_.Start();
   reader_thread_.task_runner()->PostTask(
-      FROM_HERE, base::BindOnce(&MCPTransport::ReadLoop, base::Unretained(this)));
+      FROM_HERE,
+      base::BindOnce(&MCPStdioTransport::ReadLoop, base::Unretained(this)));
 }
 
-void MCPTransport::SendMessage(const base::DictValue& message) {
+void MCPStdioTransport::SendResponse(
+    std::optional<base::DictValue> response) {
+  if (!response.has_value()) {
+    return;
+  }
+  SendMessage(response.value());
+}
+
+void MCPStdioTransport::SendMessage(const base::DictValue& message) {
   std::string json;
   base::JSONWriter::Write(message, &json);
   // MCP uses newline-delimited JSON on stdio.
   std::cout << json << "\n" << std::flush;
 }
 
-void MCPTransport::ReadLoop() {
+void MCPStdioTransport::ReadLoop() {
   std::string line;
   while (std::getline(std::cin, line)) {
     if (line.empty()) {
@@ -50,7 +60,9 @@ void MCPTransport::ReadLoop() {
 
     main_task_runner_->PostTask(
         FROM_HERE,
-        base::BindOnce(message_callback_, std::move(parsed.value())));
+        base::BindOnce(message_callback_, std::move(parsed.value()),
+                       base::BindOnce(&MCPStdioTransport::SendResponse,
+                                      base::Unretained(this))));
   }
 
   if (close_callback_) {

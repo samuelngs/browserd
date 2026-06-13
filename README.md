@@ -53,6 +53,16 @@ MCP over stdin/stdout. Point any MCP client at it:
 }
 ```
 
+Streamable HTTP can be enabled explicitly:
+
+```bash
+BROWSERD_MCP_HTTP_TOKEN=secret ./out/browserd --mcp-http-port=9223
+```
+
+The HTTP transport listens on `127.0.0.1` by default and serves `POST /mcp`.
+Use `--mcp-http-host=localhost|127.0.0.1|::1` to choose a loopback bind
+host. HTTP requests must include `Authorization: Bearer <token>`.
+
 ## Requirements
 
 - macOS or Linux
