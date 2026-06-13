@@ -63,6 +63,11 @@ The HTTP transport listens on `127.0.0.1` by default and serves `POST /mcp`.
 Use `--mcp-http-host=localhost|127.0.0.1|::1` to choose a loopback bind
 host. HTTP requests must include `Authorization: Bearer <token>`.
 
+Pass `--gui` to run with visible content-only desktop windows instead of the
+default headless mode. Each browser tab is shown as its own native window.
+GUI mode uses a persistent browserd profile by default. Pass
+`--user-data-dir=/path/to/profile` to choose a specific profile directory.
+
 ## Requirements
 
 - macOS or Linux

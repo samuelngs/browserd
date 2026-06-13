@@ -1,4 +1,15 @@
 import("//build/config/compiler/compiler.gni")
+import("//build/config/ui.gni")
+
+source_set("runtime") {
+  sources = [ "browser_runtime.h" ]
+
+  deps = [
+    "//content/public/browser",
+    "//ui/gfx/geometry",
+    "//url",
+  ]
+}
 
 executable("browserd") {
   configs -= [ "//build/config/compiler:thinlto_optimize_default" ]
@@ -6,6 +17,7 @@ executable("browserd") {
 
   sources = [
     "main.cc",
+    "switches.h",
   ]
 
   deps = [
@@ -16,20 +28,83 @@ executable("browserd") {
     "//sandbox/policy",
     "//ui/gl",
   ]
+
+  if (is_mac) {
+    deps += [ "//sandbox/mac:seatbelt" ]
+  }
 }
 
 source_set("browserd_lib") {
   sources = [
     "app.cc",
     "app.h",
+    "gui/browser_context.cc",
+    "gui/browser_context.h",
+    "gui/browser_main_parts.cc",
+    "gui/browser_main_parts.h",
+    "gui/content_browser_client.cc",
+    "gui/content_browser_client.h",
+    "gui/content_client.cc",
+    "gui/content_client.h",
+    "gui/content_renderer_client.cc",
+    "gui/content_renderer_client.h",
+    "gui/gui_runtime.cc",
+    "gui/gui_runtime.h",
+    "gui/gui_window.h",
+    "gui/main_delegate.cc",
+    "gui/main_delegate.h",
+    "headless_runtime.cc",
+    "headless_runtime.h",
+    "switches.h",
+    "user_data_dir.cc",
+    "user_data_dir.h",
   ]
 
+  if (is_mac) {
+    sources += [
+      "gui/gui_window_mac.mm",
+      "gui/mac_init.h",
+      "gui/mac_init.mm",
+    ]
+    frameworks = [
+      "AppKit.framework",
+      "Cocoa.framework",
+    ]
+  } else if (use_aura) {
+    sources += [
+      "gui/aura_context.cc",
+      "gui/aura_context.h",
+      "gui/fill_layout.cc",
+      "gui/fill_layout.h",
+      "gui/gui_window_aura.cc",
+    ]
+  }
+
   deps = [
+    ":runtime",
     "//browserd/mcp",
     "//base",
+    "//components/embedder_support:user_agent",
     "//content/public/browser",
+    "//content/public/app",
     "//content/public/common",
+    "//content/public/renderer",
+    "//headless:headless_renderer",
     "//headless:headless_shell_lib",
+    "//ui/base",
+    "//ui/display",
     "//ui/gfx/geometry",
+    "//url",
   ]
+
+  if (use_aura && !is_mac) {
+    deps += [
+      "//ui/aura",
+      "//ui/aura:test_support",
+      "//ui/events",
+      "//ui/platform_window",
+      "//ui/wm",
+      "//ui/wm/public",
+    ]
+  }
 }

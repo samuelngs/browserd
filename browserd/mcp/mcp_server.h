@@ -11,15 +11,11 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/timer/timer.h"
 #include "base/values.h"
+#include "browserd/browser_runtime.h"
 #include "browserd/mcp/mcp_http_transport.h"
 #include "browserd/mcp/mcp_tool.h"
 #include "browserd/mcp/mcp_transport.h"
 #include "content/public/browser/web_contents_observer.h"
-
-namespace headless {
-class HeadlessBrowser;
-class HeadlessBrowserContext;
-}
 
 namespace browserd {
 
@@ -37,15 +33,11 @@ class MCPServer : public content::WebContentsObserver {
                           uint16_t port,
                           const std::string& token);
 
-  void SetBrowser(headless::HeadlessBrowser* browser,
-                  headless::HeadlessBrowserContext* context);
-  void SetWebContents(content::WebContents* web_contents);
+  void SetRuntime(BrowserRuntime* runtime);
+  void RefreshActiveWebContents();
 
   content::WebContents* web_contents() const { return web_contents_; }
-  headless::HeadlessBrowser* browser() const { return browser_; }
-  headless::HeadlessBrowserContext* browser_context() const {
-    return browser_context_;
-  }
+  BrowserRuntime* runtime() const { return runtime_; }
 
   void InjectScriptOnNewDocument(const std::string& source);
 
@@ -98,12 +90,12 @@ class MCPServer : public content::WebContentsObserver {
   void OnTransportClosed();
   void StartBehaviorSimulation();
   void DispatchMouseMove();
+  void SetWebContents(content::WebContents* web_contents);
 
   MCPStdioTransport stdio_transport_;
   MCPHttpTransport http_transport_;
+  raw_ptr<BrowserRuntime> runtime_ = nullptr;
   raw_ptr<content::WebContents> web_contents_ = nullptr;
-  raw_ptr<headless::HeadlessBrowser> browser_ = nullptr;
-  raw_ptr<headless::HeadlessBrowserContext> browser_context_ = nullptr;
   std::vector<MCPToolDef> tools_;
   std::vector<std::string> injected_scripts_;
   bool initialized_ = false;

@@ -13,6 +13,8 @@
 #include "base/process/process.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "browserd/browser_runtime.h"
+#include "browserd/headless_runtime.h"
 #include "browserd/mcp/tools/cookie_tools.h"
 #include "browserd/mcp/tools/evaluate_tools.h"
 #include "browserd/mcp/tools/interaction_tools.h"
@@ -20,11 +22,8 @@
 #include "browserd/mcp/tools/snapshot_tools.h"
 #include "browserd/mcp/tools/tab_tools.h"
 #include "browserd/mcp/tools/wait_tools.h"
-#include "headless/lib/browser/headless_browser_impl.h"
-#include "headless/lib/browser/headless_web_contents_impl.h"
-#include "headless/public/headless_browser_context.h"
-#include "headless/public/headless_web_contents.h"
-#include "ui/gfx/geometry/rect.h"
+#include "content/public/browser/web_contents.h"
+#include "headless/public/headless_browser.h"
 
 namespace browserd {
 namespace {
@@ -96,34 +95,19 @@ App::App() = default;
 App::~App() = default;
 
 void App::OnBrowserStart(headless::HeadlessBrowser* browser) {
-  browser_ = browser;
-
-  headless::HeadlessBrowserContext::Builder context_builder =
-      browser_->CreateBrowserContextBuilder();
-  context_builder.SetIncognitoMode(false);
-  base::FilePath temp_dir;
-  if (base::CreateNewTempDirectory(base::FilePath::StringType(), &temp_dir)) {
-    context_builder.SetUserDataDir(temp_dir);
-  }
-  headless::HeadlessBrowserContext* browser_context = context_builder.Build();
-  browser_->SetDefaultBrowserContext(browser_context);
-
-  headless::HeadlessWebContents::Builder builder(
-      browser_context->CreateWebContentsBuilder());
-  headless::HeadlessWebContents* headless_contents =
-      builder.SetInitialURL(GURL("about:blank"))
-          .SetWindowBounds(gfx::Rect(72, 50, 1920, 1030))
-          .Build();
-
-  if (!headless_contents) {
+  auto runtime = std::make_unique<HeadlessRuntime>(browser);
+  if (!runtime->Initialize()) {
     LOG(ERROR) << "Failed to create initial web contents.";
-    browser_->Shutdown();
+    browser->Shutdown();
     return;
   }
 
-  content::WebContents* web_contents =
-      headless::HeadlessWebContentsImpl::From(headless_contents)
-          ->web_contents();
+  Start(std::move(runtime), browser->BrowserMainThread());
+}
+
+void App::Start(std::unique_ptr<BrowserRuntime> runtime,
+                scoped_refptr<base::SequencedTaskRunner> task_runner) {
+  runtime_ = std::move(runtime);
 
   RegisterTools();
 
@@ -158,15 +142,14 @@ void App::OnBrowserStart(headless::HeadlessBrowser* browser) {
       "  console.debug = function() { capture('debug', arguments); orig.debug.apply(console, arguments); };"
       "})();");
 
-  mcp_server_.SetBrowser(browser, browser_context);
-  mcp_server_.SetWebContents(web_contents);
+  mcp_server_.SetRuntime(runtime_.get());
+  mcp_server_.RefreshActiveWebContents();
   std::optional<MCPHttpConfig> http_config = GetMCPHttpConfig();
   if (http_config.has_value() && IsInvalidHttpConfig(http_config.value())) {
     base::Process::TerminateCurrentProcessImmediately(1);
   }
 
-  mcp_server_.Start(browser_->BrowserMainThread(),
-                    !http_config.has_value());
+  mcp_server_.Start(std::move(task_runner), !http_config.has_value());
   if (http_config.has_value() &&
       !mcp_server_.StartHttpTransport(http_config->host, http_config->port,
                                       http_config->token)) {

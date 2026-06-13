@@ -3,11 +3,20 @@
 
 #include <memory>
 
-#include "base/memory/raw_ptr.h"
+#include "base/memory/scoped_refptr.h"
 #include "browserd/mcp/mcp_server.h"
-#include "headless/public/headless_browser.h"
+
+namespace base {
+class SequencedTaskRunner;
+}  // namespace base
+
+namespace headless {
+class HeadlessBrowser;
+}  // namespace headless
 
 namespace browserd {
+
+class BrowserRuntime;
 
 class App {
  public:
@@ -18,11 +27,13 @@ class App {
   App& operator=(const App&) = delete;
 
   void OnBrowserStart(headless::HeadlessBrowser* browser);
+  void Start(std::unique_ptr<BrowserRuntime> runtime,
+             scoped_refptr<base::SequencedTaskRunner> task_runner);
 
  private:
   void RegisterTools();
 
-  raw_ptr<headless::HeadlessBrowser> browser_ = nullptr;
+  std::unique_ptr<BrowserRuntime> runtime_;
   MCPServer mcp_server_;
 };
 

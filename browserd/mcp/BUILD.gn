@@ -25,6 +25,7 @@ source_set("mcp") {
   ]
 
   deps = [
+    "//browserd:runtime",
     "//base",
     "//components/input",
     "//components/viz/common",

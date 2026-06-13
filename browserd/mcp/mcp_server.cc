@@ -6,7 +6,6 @@
 #include <utility>
 
 #include "base/functional/bind.h"
-#include "headless/public/headless_browser.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/rand_util.h"
@@ -57,15 +56,12 @@ bool MCPServer::StartHttpTransport(const std::string& host,
       base::BindRepeating(&MCPServer::OnMessage, base::Unretained(this)));
 }
 
-void MCPServer::SetBrowser(headless::HeadlessBrowser* browser,
-                           headless::HeadlessBrowserContext* context) {
-  browser_ = browser;
-  browser_context_ = context;
+void MCPServer::SetRuntime(BrowserRuntime* runtime) {
+  runtime_ = runtime;
 }
 
-void MCPServer::SetWebContents(content::WebContents* web_contents) {
-  web_contents_ = web_contents;
-  Observe(web_contents);
+void MCPServer::RefreshActiveWebContents() {
+  SetWebContents(runtime_ ? runtime_->active_web_contents() : nullptr);
 }
 
 void MCPServer::InjectScriptOnNewDocument(const std::string& source) {
@@ -228,6 +224,7 @@ void MCPServer::ExecuteNextToolCall() {
   tool_call_in_progress_ = true;
   PendingToolCall call = std::move(tool_call_queue_.front());
   tool_call_queue_.pop();
+  RefreshActiveWebContents();
 
   for (auto& tool : tools_) {
     if (tool.name == call.name) {
@@ -349,10 +346,19 @@ void MCPServer::DispatchMouseMove() {
 void MCPServer::OnTransportClosed() {
   if (shutdown_on_stdio_close_) {
     behavior_timer_.Stop();
-    if (browser_) {
-      browser_->Shutdown();
+    if (runtime_) {
+      runtime_->Shutdown();
     }
   }
+}
+
+void MCPServer::SetWebContents(content::WebContents* web_contents) {
+  if (web_contents_ == web_contents) {
+    return;
+  }
+
+  web_contents_ = web_contents;
+  Observe(web_contents);
 }
 
 }  // namespace browserd
