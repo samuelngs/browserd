@@ -7,7 +7,6 @@
 #include "browserd/gui/main_delegate.h"
 #include "browserd/switches.h"
 #include "build/build_config.h"
-#include "components/os_crypt/common/os_crypt_switches.h"
 #include "content/public/app/content_main.h"
 #include "content/public/common/content_switches.h"
 #include "headless/lib/browser/headless_browser_impl.h"
@@ -17,6 +16,7 @@
 #include "ui/gl/gl_switches.h"
 
 #if BUILDFLAG(IS_MAC)
+#include "components/os_crypt/common/os_crypt_switches.h"
 #include "sandbox/mac/seatbelt_exec.h"
 #endif
 
@@ -107,7 +107,9 @@ int main(int argc, const char** argv) {
   MaybeEnableGpu(command_line, requested_gui, environment.get());
   command_line->AppendSwitch(switches::kEnableUnsafeSwiftShader);
   command_line->AppendSwitch("use-fake-device-for-media-stream");
+#if BUILDFLAG(IS_MAC)
   command_line->AppendSwitch(os_crypt::switches::kUseMockKeychain);
+#endif
 
   if (!command_line->HasSwitch(headless::switches::kAcceptLang)) {
     command_line->AppendSwitchASCII(headless::switches::kAcceptLang,
