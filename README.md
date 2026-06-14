@@ -68,6 +68,23 @@ default headless mode. Each browser tab is shown as its own native window.
 GUI mode uses a persistent browserd profile by default. Pass
 `--user-data-dir=/path/to/profile` to choose a specific profile directory.
 
+## systemd
+
+The repository includes a systemd unit for running Streamable HTTP on Linux:
+
+```bash
+sudo install -Dm755 out/browserd /usr/local/bin/browserd
+sudo install -Dm644 packaging/systemd/browserd.service /etc/systemd/system/browserd.service
+sudo install -Dm600 packaging/systemd/browserd.env.example /etc/browserd/browserd.env
+sudoedit /etc/browserd/browserd.env
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now browserd
+```
+
+Set `BROWSERD_MCP_HTTP_TOKEN` in `/etc/browserd/browserd.env` before starting.
+The default endpoint is `http://127.0.0.1:9223/mcp`.
+
 ## Requirements
 
 - macOS or Linux

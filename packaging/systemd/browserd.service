@@ -1,0 +1,22 @@
+[Unit]
+Description=browserd MCP Streamable HTTP server
+Documentation=https://github.com/samuelngs/browserd
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=browserd
+CacheDirectory=browserd
+Environment=BROWSERD_MCP_HTTP_HOST=127.0.0.1
+Environment=BROWSERD_MCP_HTTP_PORT=9223
+EnvironmentFile=/etc/browserd/browserd.env
+ExecStart=/usr/local/bin/browserd --mcp-http-host=${BROWSERD_MCP_HTTP_HOST} --mcp-http-port=${BROWSERD_MCP_HTTP_PORT} --user-data-dir=/var/lib/browserd/profile
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
