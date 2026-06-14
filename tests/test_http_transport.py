@@ -211,3 +211,35 @@ def test_streamable_http_requires_token(browserd_binary):
         assert any("BROWSERD_MCP_HTTP_TOKEN" in line for line in client.stderr_lines)
     finally:
         client.close()
+
+
+def test_streamable_http_all_interfaces_bind(browserd_binary):
+    client = HTTPMCPClient(browserd_binary)
+    client.start(extra_args=["--mcp-http-host=0.0.0.0"])
+    try:
+        client.wait_until_ready()
+        result = client.rpc(
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "browserd-http-test", "version": "1.0"},
+            },
+            request_id=1,
+        )
+        assert result["result"]["serverInfo"]["name"] == "browserd"
+    finally:
+        client.close()
+
+
+def test_streamable_http_rejects_invalid_bind_host(browserd_binary):
+    client = HTTPMCPClient(browserd_binary)
+    client.start(extra_args=["--mcp-http-host=192.0.2.10"])
+    try:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and client.process.poll() is None:
+            time.sleep(0.1)
+        assert client.process.poll() is not None
+        assert any("Invalid --mcp-http-host" in line for line in client.stderr_lines)
+    finally:
+        client.close()

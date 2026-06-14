@@ -56,7 +56,8 @@ constexpr net::NetworkTrafficAnnotationTag kMcpHttpTrafficAnnotation =
       })");
 
 bool IsAllowedListenHost(const std::string& host) {
-  return host == "127.0.0.1" || host == "::1" ||
+  return host == "127.0.0.1" || host == "0.0.0.0" || host == "::1" ||
+         host == "::" ||
          base::EqualsCaseInsensitiveASCII(host, "localhost");
 }
 

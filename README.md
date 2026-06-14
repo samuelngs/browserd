@@ -60,8 +60,9 @@ BROWSERD_MCP_HTTP_TOKEN=secret ./out/browserd --mcp-http-port=9223
 ```
 
 The HTTP transport listens on `127.0.0.1` by default and serves `POST /mcp`.
-Use `--mcp-http-host=localhost|127.0.0.1|::1` to choose a loopback bind
-host. HTTP requests must include `Authorization: Bearer <token>`.
+Use `--mcp-http-host=<address>` to choose a bind address, for example
+`127.0.0.1`, `::1`, `0.0.0.0`, or `::`. HTTP requests must include
+`Authorization: Bearer <token>`.
 
 Pass `--gui` to run with visible content-only desktop windows instead of the
 default headless mode. Each browser tab is shown as its own native window.
