@@ -4,9 +4,9 @@
 #include "base/memory/raw_ptr.h"
 #include "base/notimplemented.h"
 #include "browserd/gui/fill_layout.h"
+#include "build/build_config.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/focus_client.h"
-#include "ui/aura/test/test_screen.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
@@ -21,6 +21,10 @@
 #include "ui/wm/core/focus_controller.h"
 #include "ui/wm/core/native_cursor_manager.h"
 #include "ui/wm/public/activation_client.h"
+
+#if BUILDFLAG(IS_OZONE)
+#include "ui/aura/screen_ozone.h"
+#endif
 
 namespace browserd::gui {
 
@@ -126,11 +130,12 @@ AuraContext::Host::~Host() {
   context_->UninitializeHost(window_tree_host_.get());
 }
 
-AuraContext::AuraContext()
-    : screen_(aura::TestScreen::Create(gfx::Size(1024, 768))) {
-  if (!display::Screen::Get()) {
-    display::Screen::SetScreenInstance(screen_.get());
+AuraContext::AuraContext() {
+#if BUILDFLAG(IS_OZONE)
+  if (!display::Screen::HasScreen()) {
+    screen_ = std::make_unique<aura::ScreenOzone>();
   }
+#endif
   focus_controller_ = std::make_unique<wm::FocusController>(new FocusRules());
   auto native_cursor_manager = std::make_unique<NativeCursorManager>();
   native_cursor_manager_ = native_cursor_manager.get();

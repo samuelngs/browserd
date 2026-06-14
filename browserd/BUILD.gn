@@ -111,7 +111,6 @@ source_set("browserd_lib") {
   if (use_aura && !is_mac) {
     deps += [
       "//ui/aura",
-      "//ui/aura:test_support",
       "//ui/events",
       "//ui/platform_window",
       "//ui/wm",
