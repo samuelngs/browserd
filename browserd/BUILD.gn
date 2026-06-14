@@ -1,5 +1,6 @@
 import("//build/config/compiler/compiler.gni")
 import("//build/config/ui.gni")
+import("//headless/headless.gni")
 
 source_set("runtime") {
   sources = [ "browser_runtime.h" ]
@@ -35,6 +36,8 @@ executable("browserd") {
 }
 
 source_set("browserd_lib") {
+  defines = []
+
   sources = [
     "app.cc",
     "app.h",
@@ -96,6 +99,14 @@ source_set("browserd_lib") {
     "//ui/gfx/geometry",
     "//url",
   ]
+
+  if (headless_use_embedded_resources) {
+    defines += [ "HEADLESS_USE_EMBEDDED_RESOURCES" ]
+    deps += [
+      "//headless:embedded_resource_pack_data",
+      "//headless:embedded_resource_pack_strings",
+    ]
+  }
 
   if (use_aura && !is_mac) {
     deps += [

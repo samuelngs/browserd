@@ -13,6 +13,11 @@
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches.h"
 
+#if defined(HEADLESS_USE_EMBEDDED_RESOURCES)
+#include "headless/embedded_resource_pack_data.h"     // nogncheck
+#include "headless/embedded_resource_pack_strings.h"  // nogncheck
+#endif
+
 #if BUILDFLAG(IS_MAC)
 #include "browserd/gui/mac_init.h"
 #endif
@@ -21,6 +26,13 @@ namespace browserd::gui {
 namespace {
 
 void InitializeResourceBundle(const base::CommandLine& command_line) {
+#if defined(HEADLESS_USE_EMBEDDED_RESOURCES)
+  (void)command_line;
+  ui::ResourceBundle::InitSharedInstanceWithBuffer(
+      headless::kHeadlessResourcePackStrings, ui::kScaleFactorNone);
+  ui::ResourceBundle::GetSharedInstance().AddDataPackFromBuffer(
+      headless::kHeadlessResourcePackData, ui::k100Percent);
+#else
   base::FilePath resource_dir;
   CHECK(base::PathService::Get(base::DIR_ASSETS, &resource_dir));
 
@@ -41,6 +53,7 @@ void InitializeResourceBundle(const base::CommandLine& command_line) {
   }
   ui::ResourceBundle::InitSharedInstanceWithLocale(
       locale, nullptr, ui::ResourceBundle::DO_NOT_LOAD_COMMON_RESOURCES);
+#endif
 }
 
 }  // namespace

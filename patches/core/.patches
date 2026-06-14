@@ -15,3 +15,4 @@
 0015-window-re-apply-frame-bounds-on-RenderWidgetHostView.patch
 0016-console-prevent-Error-property-getter-side-effects-d.patch
 0017-canvas-apply-deterministic-noise-to-getImageData-pix.patch
+0018-build-gate-views-examples-icu-data-bundle.patch

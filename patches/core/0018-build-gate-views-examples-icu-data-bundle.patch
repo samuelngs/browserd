@@ -1,0 +1,45 @@
+From 9a19c5434ebf0845ea35e59e7cde8afb7c9f00ee Mon Sep 17 00:00:00 2001
+From: Sam <samuelngs@users.noreply.github.com>
+Date: Sun, 14 Jun 2026 13:05:46 -0600
+Subject: [PATCH] build: gate views examples ICU data bundle
+
+---
+ ui/views/examples/BUILD.gn | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/ui/views/examples/BUILD.gn b/ui/views/examples/BUILD.gn
+index eeb747b83f..423fac331f 100644
+--- a/ui/views/examples/BUILD.gn
++++ b/ui/views/examples/BUILD.gn
+@@ -10,6 +10,7 @@ import("//ui/gl/features.gni")
+ if (is_mac) {
+   import("//build/apple/tweak_info_plist.gni")
+   import("//build/config/mac/rules.gni")
++  import("//third_party/icu/config.gni")
+ }
+ 
+ component("views_examples_lib") {
+@@ -373,7 +374,6 @@ if (is_mac) {
+     testonly = true
+ 
+     sources = [
+-      "$root_out_dir/icudtl.dat",
+       "$root_out_dir/ui_test.pak",
+       "$root_out_dir/views_examples_resources.pak",
+     ]
+@@ -381,7 +381,11 @@ if (is_mac) {
+       ":views_examples_resources_pak",
+       "//ui/resources:ui_test_pak",
+     ]
+-    deps = [ "//third_party/icu:icudata" ]
++
++    if (icu_use_data_file) {
++      sources += [ "$root_out_dir/icudtl.dat" ]
++      deps = [ "//third_party/icu:icudata" ]
++    }
+ 
+     outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
+   }
+-- 
+2.54.0
+
