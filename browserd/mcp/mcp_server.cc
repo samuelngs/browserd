@@ -1,6 +1,5 @@
 #include "browserd/mcp/mcp_server.h"
 
-#include <cmath>
 #include <optional>
 #include <string>
 #include <utility>
@@ -8,18 +7,8 @@
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/rand_util.h"
-#include "base/strings/utf_string_conversions.h"
-#include "base/time/time.h"
 #include "base/values.h"
-#include "content/public/browser/navigation_handle.h"
-#include "content/public/browser/render_frame_host.h"
-#include "content/public/browser/render_widget_host.h"
-#include "content/public/browser/render_widget_host_view.h"
-#include "content/public/browser/web_contents.h"
-#include "content/public/common/isolated_world_ids.h"
-#include "third_party/blink/public/common/input/web_mouse_event.h"
-#include "ui/events/base_event_utils.h"
+#include "browserd/core/browser_controller.h"
 
 namespace browserd {
 
@@ -45,7 +34,6 @@ void MCPServer::Start(scoped_refptr<base::SequencedTaskRunner> task_runner,
       std::move(task_runner), base::BindRepeating(&MCPServer::OnMessage,
                                                   base::Unretained(this)),
       base::BindOnce(&MCPServer::OnTransportClosed, base::Unretained(this)));
-  StartBehaviorSimulation();
 }
 
 bool MCPServer::StartHttpTransport(const std::string& host,
@@ -56,33 +44,8 @@ bool MCPServer::StartHttpTransport(const std::string& host,
       base::BindRepeating(&MCPServer::OnMessage, base::Unretained(this)));
 }
 
-void MCPServer::SetRuntime(BrowserRuntime* runtime) {
-  runtime_ = runtime;
-}
-
-void MCPServer::RefreshActiveWebContents() {
-  SetWebContents(runtime_ ? runtime_->active_web_contents() : nullptr);
-}
-
-void MCPServer::InjectScriptOnNewDocument(const std::string& source) {
-  injected_scripts_.push_back(source);
-}
-
-void MCPServer::DidFinishNavigation(content::NavigationHandle* navigation_handle) {
-  if (!navigation_handle->IsInPrimaryMainFrame() ||
-      !navigation_handle->HasCommitted()) {
-    return;
-  }
-
-  auto* rfh = navigation_handle->GetRenderFrameHost();
-  if (!rfh)
-    return;
-
-  for (const auto& script : injected_scripts_) {
-    rfh->ExecuteJavaScriptWithUserGestureForTests(
-        base::UTF8ToUTF16(script), base::NullCallback(),
-        content::ISOLATED_WORLD_ID_GLOBAL);
-  }
+void MCPServer::SetController(BrowserController* controller) {
+  controller_ = controller;
 }
 
 void MCPServer::RegisterTool(MCPToolDef tool) {
@@ -224,12 +187,17 @@ void MCPServer::ExecuteNextToolCall() {
   tool_call_in_progress_ = true;
   PendingToolCall call = std::move(tool_call_queue_.front());
   tool_call_queue_.pop();
-  RefreshActiveWebContents();
+
+  if (!controller_) {
+    OnToolCallComplete(std::move(call.id), std::move(call.response_callback),
+                       TextContent("No browser controller"), true);
+    return;
+  }
 
   for (auto& tool : tools_) {
     if (tool.name == call.name) {
       tool.handler.Run(
-          web_contents_, std::move(call.args),
+          controller_, std::move(call.args),
           base::BindOnce(&MCPServer::OnToolCallComplete,
                          base::Unretained(this), std::move(call.id),
                          std::move(call.response_callback)));
@@ -288,77 +256,12 @@ void MCPServer::SendError(const base::Value& id,
       std::optional<base::DictValue>(std::move(response)));
 }
 
-void MCPServer::StartBehaviorSimulation() {
-  mouse_x_ = 400.0 + base::RandDouble() * 200.0;
-  mouse_y_ = 300.0 + base::RandDouble() * 200.0;
-  behavior_timer_.Start(
-      FROM_HERE, base::Milliseconds(80 + base::RandInt(0, 60)),
-      base::BindRepeating(&MCPServer::DispatchMouseMove,
-                           base::Unretained(this)));
-}
-
-void MCPServer::DispatchMouseMove() {
-  behavior_tick_++;
-
-  double jitter_x = (base::RandDouble() - 0.5) * 3.0;
-  double jitter_y = (base::RandDouble() - 0.5) * 3.0;
-
-  double drift_x = std::sin(behavior_tick_ * 0.02) * 0.8;
-  double drift_y = std::cos(behavior_tick_ * 0.017) * 0.6;
-
-  mouse_vx_ = mouse_vx_ * 0.85 + (drift_x + jitter_x) * 0.15;
-  mouse_vy_ = mouse_vy_ * 0.85 + (drift_y + jitter_y) * 0.15;
-
-  mouse_x_ += mouse_vx_;
-  mouse_y_ += mouse_vy_;
-
-  mouse_x_ = std::clamp(mouse_x_, 10.0, 1910.0);
-  mouse_y_ = std::clamp(mouse_y_, 10.0, 1070.0);
-
-  if (!web_contents_)
-    return;
-
-  auto* rwhv = web_contents_->GetRenderWidgetHostView();
-  if (!rwhv)
-    return;
-
-  auto* rwh = rwhv->GetRenderWidgetHost();
-  if (!rwh)
-    return;
-
-  blink::WebMouseEvent event(
-      blink::WebInputEvent::Type::kMouseMove,
-      blink::WebInputEvent::kNoModifiers,
-      ui::EventTimeForNow());
-  event.SetPositionInWidget(
-      static_cast<float>(mouse_x_), static_cast<float>(mouse_y_));
-  event.SetPositionInScreen(
-      static_cast<float>(mouse_x_), static_cast<float>(mouse_y_));
-  rwh->ForwardMouseEvent(event);
-
-  int next_ms = 70 + base::RandInt(0, 80);
-  behavior_timer_.Start(
-      FROM_HERE, base::Milliseconds(next_ms),
-      base::BindRepeating(&MCPServer::DispatchMouseMove,
-                           base::Unretained(this)));
-}
-
 void MCPServer::OnTransportClosed() {
   if (shutdown_on_stdio_close_) {
-    behavior_timer_.Stop();
-    if (runtime_) {
-      runtime_->Shutdown();
+    if (controller_) {
+      controller_->Shutdown();
     }
   }
-}
-
-void MCPServer::SetWebContents(content::WebContents* web_contents) {
-  if (web_contents_ == web_contents) {
-    return;
-  }
-
-  web_contents_ = web_contents;
-  Observe(web_contents);
 }
 
 }  // namespace browserd

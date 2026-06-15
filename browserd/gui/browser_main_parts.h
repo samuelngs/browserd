@@ -5,7 +5,8 @@
 
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "browserd/app.h"
+#include "base/task/sequenced_task_runner.h"
+#include "browserd/browser_runtime.h"
 #include "build/build_config.h"
 #include "content/public/browser/browser_main_parts.h"
 
@@ -19,7 +20,11 @@ namespace browserd::gui {
 
 class BrowserMainParts : public content::BrowserMainParts {
  public:
-  BrowserMainParts();
+  using RuntimeReadyCallback =
+      base::OnceCallback<void(std::unique_ptr<BrowserRuntime>,
+                              scoped_refptr<base::SequencedTaskRunner>)>;
+
+  explicit BrowserMainParts(RuntimeReadyCallback runtime_ready_callback);
   ~BrowserMainParts() override;
 
   BrowserMainParts(const BrowserMainParts&) = delete;
@@ -33,7 +38,7 @@ class BrowserMainParts : public content::BrowserMainParts {
 
   void RequestQuit();
 
-  App app_;
+  RuntimeReadyCallback runtime_ready_callback_;
 #if BUILDFLAG(IS_MAC)
   std::unique_ptr<display::ScopedNativeScreen> screen_;
 #endif

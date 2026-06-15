@@ -1,47 +1,29 @@
 #include "browserd/mcp/tools/navigation_tools.h"
 
+#include <optional>
+#include <string>
+#include <utility>
+
 #include "base/functional/bind.h"
-#include "base/memory/raw_ptr.h"
+#include "browserd/core/browser_controller.h"
 #include "browserd/mcp/mcp_server.h"
 #include "browserd/mcp/mcp_tool.h"
-#include "content/public/browser/navigation_controller.h"
-#include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_observer.h"
-#include "net/base/net_errors.h"
-#include "ui/base/page_transition_types.h"
+#include "url/gurl.h"
 
 namespace browserd {
-
 namespace {
 
-class NavigationWaiter : public content::WebContentsObserver {
- public:
-  NavigationWaiter(content::WebContents* wc, ToolResultCallback cb)
-      : content::WebContentsObserver(wc), callback_(std::move(cb)) {}
-
-  void DidStopLoading() override {
-    if (callback_) {
-      std::move(callback_).Run(TextContent("Navigated to page"), false);
-    }
-    delete this;
+void CompleteStatus(std::string success_message,
+                    ToolResultCallback callback,
+                    BrowserStatus status) {
+  if (!status.ok()) {
+    std::move(callback).Run(TextContent(status.message), true);
+    return;
   }
+  std::move(callback).Run(TextContent(success_message), false);
+}
 
-  void DidFailLoad(content::RenderFrameHost* rfh,
-                   const GURL& validated_url,
-                   int error_code) override {
-    if (callback_) {
-      std::move(callback_).Run(
-          TextContent("Navigation failed: " + net::ErrorToString(error_code)),
-          true);
-    }
-    delete this;
-  }
-
- private:
-  ToolResultCallback callback_;
-};
-
-void HandleNavigate(content::WebContents* web_contents,
+void HandleNavigate(BrowserController* controller,
                     base::DictValue args,
                     ToolResultCallback callback) {
   const std::string* url = args.FindString("url");
@@ -51,56 +33,35 @@ void HandleNavigate(content::WebContents* web_contents,
     return;
   }
 
-  new NavigationWaiter(web_contents, std::move(callback));
-
-  content::NavigationController::LoadURLParams params((GURL(*url)));
-  params.transition_type = ui::PAGE_TRANSITION_TYPED;
-  web_contents->GetController().LoadURLWithParams(params);
+  controller->Navigate(
+      std::nullopt, GURL(*url),
+      base::BindOnce(&CompleteStatus, "Navigated to page",
+                     std::move(callback)));
 }
 
-void HandleNavigateBack(content::WebContents* web_contents,
+void HandleNavigateBack(BrowserController* controller,
                         base::DictValue args,
                         ToolResultCallback callback) {
-  if (web_contents->GetController().CanGoBack()) {
-    web_contents->GetController().GoBack();
-    std::move(callback).Run(TextContent("Navigated back"), false);
-  } else {
-    std::move(callback).Run(TextContent("Cannot go back"), true);
-  }
+  controller->NavigateBack(
+      std::nullopt,
+      base::BindOnce(&CompleteStatus, "Navigated back", std::move(callback)));
 }
 
-void HandleNavigateForward(content::WebContents* web_contents,
+void HandleNavigateForward(BrowserController* controller,
                            base::DictValue args,
                            ToolResultCallback callback) {
-  if (web_contents->GetController().CanGoForward()) {
-    web_contents->GetController().GoForward();
-    std::move(callback).Run(TextContent("Navigated forward"), false);
-  } else {
-    std::move(callback).Run(TextContent("Cannot go forward"), true);
-  }
+  controller->NavigateForward(
+      std::nullopt,
+      base::BindOnce(&CompleteStatus, "Navigated forward",
+                     std::move(callback)));
 }
 
-class ReloadWaiter : public content::WebContentsObserver {
- public:
-  ReloadWaiter(content::WebContents* wc, ToolResultCallback cb)
-      : content::WebContentsObserver(wc), callback_(std::move(cb)) {}
-
-  void DidStopLoading() override {
-    if (callback_) {
-      std::move(callback_).Run(TextContent("Page reloaded"), false);
-    }
-    delete this;
-  }
-
- private:
-  ToolResultCallback callback_;
-};
-
-void HandleReload(content::WebContents* web_contents,
+void HandleReload(BrowserController* controller,
                   base::DictValue args,
                   ToolResultCallback callback) {
-  new ReloadWaiter(web_contents, std::move(callback));
-  web_contents->GetController().Reload(content::ReloadType::NORMAL, false);
+  controller->Reload(
+      std::nullopt,
+      base::BindOnce(&CompleteStatus, "Page reloaded", std::move(callback)));
 }
 
 }  // namespace
@@ -109,7 +70,9 @@ void RegisterNavigationTools(MCPServer& server) {
   server.RegisterTool({
       "browser_navigate",
       "Navigate to a URL",
-      SchemaObject(base::DictValue().Set("url", SchemaString("URL to navigate to")), {"url"}),
+      SchemaObject(
+          base::DictValue().Set("url", SchemaString("URL to navigate to")),
+          {"url"}),
       base::BindRepeating(&HandleNavigate),
   });
 

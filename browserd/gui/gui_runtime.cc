@@ -44,6 +44,22 @@ content::WebContents* GuiRuntime::active_web_contents() const {
   return tab ? tab->window->web_contents() : nullptr;
 }
 
+content::WebContents* GuiRuntime::GetWebContentsByTargetId(
+    const std::string& target_id) const {
+  const Tab* tab = FindTab(target_id);
+  return tab ? tab->window->web_contents() : nullptr;
+}
+
+std::vector<content::WebContents*> GuiRuntime::AllWebContents() const {
+  std::vector<content::WebContents*> web_contents_list;
+  for (const auto& tab : tabs_) {
+    if (auto* web_contents = tab.window->web_contents()) {
+      web_contents_list.push_back(web_contents);
+    }
+  }
+  return web_contents_list;
+}
+
 std::vector<BrowserTabInfo> GuiRuntime::ListTabs() const {
   std::vector<BrowserTabInfo> tabs;
   for (const auto& tab : tabs_) {

@@ -30,6 +30,9 @@ class BrowserRuntime {
 
   virtual content::BrowserContext* browser_context() const = 0;
   virtual content::WebContents* active_web_contents() const = 0;
+  virtual content::WebContents* GetWebContentsByTargetId(
+      const std::string& target_id) const = 0;
+  virtual std::vector<content::WebContents*> AllWebContents() const = 0;
   virtual std::vector<BrowserTabInfo> ListTabs() const = 0;
   virtual std::optional<BrowserTabInfo> CreateTab(const GURL& url) = 0;
   virtual bool CloseTab(const std::optional<std::string>& target_id) = 0;

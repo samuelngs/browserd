@@ -29,6 +29,9 @@ class GuiRuntime : public BrowserRuntime {
 
   content::BrowserContext* browser_context() const override;
   content::WebContents* active_web_contents() const override;
+  content::WebContents* GetWebContentsByTargetId(
+      const std::string& target_id) const override;
+  std::vector<content::WebContents*> AllWebContents() const override;
   std::vector<BrowserTabInfo> ListTabs() const override;
   std::optional<BrowserTabInfo> CreateTab(const GURL& url) override;
   bool CloseTab(const std::optional<std::string>& target_id) override;

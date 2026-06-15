@@ -1,32 +1,31 @@
 #include "browserd/mcp/tools/tab_tools.h"
 
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "base/functional/bind.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/stringprintf.h"
-#include "base/strings/utf_string_conversions.h"
+#include "browserd/core/browser_controller.h"
 #include "browserd/mcp/mcp_server.h"
 #include "browserd/mcp/mcp_tool.h"
-#include "content/public/browser/web_contents.h"
 #include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
 
 namespace browserd {
-
 namespace {
 
-void HandleTabs(MCPServer* server,
-                content::WebContents* web_contents,
-                base::DictValue args,
-                ToolResultCallback callback) {
-  auto* runtime = server->runtime();
-  if (!runtime) {
-    std::move(callback).Run(TextContent("No browser runtime"), true);
+void CompleteTabs(ToolResultCallback callback,
+                  BrowserResult<std::vector<BrowserTabInfo>> result) {
+  if (!result.ok()) {
+    std::move(callback).Run(TextContent(result.status.message), true);
     return;
   }
 
   std::string output;
   int index = 0;
-  for (const auto& tab : runtime->ListTabs()) {
+  for (const auto& tab : result.value.value()) {
     output += "[" + base::NumberToString(index) + "] ";
     output += tab.title;
     output += " (" + tab.url + ")";
@@ -39,83 +38,70 @@ void HandleTabs(MCPServer* server,
       TextContent(output.empty() ? "No tabs open" : output), false);
 }
 
-void HandleNewTab(MCPServer* server,
-                  content::WebContents* web_contents,
-                  base::DictValue args,
-                  ToolResultCallback callback) {
-  auto* runtime = server->runtime();
-  if (!runtime) {
-    std::move(callback).Run(TextContent("No browser runtime"), true);
+void CompleteCreateTab(ToolResultCallback callback,
+                       BrowserResult<BrowserTabInfo> result) {
+  if (!result.ok()) {
+    std::move(callback).Run(TextContent(result.status.message), true);
     return;
   }
-
-  const std::string* url = args.FindString("url");
-  std::string target_url = url ? *url : "about:blank";
-  GURL gurl(target_url);
-  if (!gurl.is_valid()) {
-    std::move(callback).Run(TextContent("Invalid URL"), true);
-    return;
-  }
-
-  std::optional<BrowserTabInfo> new_tab = runtime->CreateTab(gurl);
-  server->RefreshActiveWebContents();
-
-  if (new_tab.has_value()) {
-    std::move(callback).Run(
-        TextContent("Created new tab: " + new_tab->target_id), false);
-  } else {
-    std::move(callback).Run(TextContent("Failed to create tab"), true);
-  }
+  std::move(callback).Run(
+      TextContent("Created new tab: " + result.value->target_id), false);
 }
 
-void HandleClose(MCPServer* server,
-                 content::WebContents* web_contents,
-                 base::DictValue args,
-                 ToolResultCallback callback) {
-  auto* runtime = server->runtime();
-  if (!runtime) {
-    std::move(callback).Run(TextContent("No browser runtime"), true);
+void CompleteStatus(std::string success_message,
+                    ToolResultCallback callback,
+                    BrowserStatus status) {
+  if (!status.ok()) {
+    std::move(callback).Run(TextContent(status.message), true);
     return;
   }
+  std::move(callback).Run(TextContent(success_message), false);
+}
 
+void HandleTabs(BrowserController* controller,
+                base::DictValue args,
+                ToolResultCallback callback) {
+  controller->ListTabs(base::BindOnce(&CompleteTabs, std::move(callback)));
+}
+
+void HandleNewTab(BrowserController* controller,
+                  base::DictValue args,
+                  ToolResultCallback callback) {
+  const std::string* url = args.FindString("url");
+  std::string target_url = url ? *url : "about:blank";
+  controller->CreateTab(GURL(target_url),
+                        base::BindOnce(&CompleteCreateTab,
+                                       std::move(callback)));
+}
+
+void HandleClose(BrowserController* controller,
+                 base::DictValue args,
+                 ToolResultCallback callback) {
   const std::string* target_id = args.FindString("targetId");
   std::optional<std::string> target;
   if (target_id) {
     target = *target_id;
   }
 
-  if (!runtime->CloseTab(target)) {
-    std::move(callback).Run(
-        TextContent(target_id ? "Tab not found: " + *target_id
-                              : "No active tab"),
-        true);
-    return;
-  }
-
-  server->RefreshActiveWebContents();
-  std::move(callback).Run(
-      TextContent(target_id ? "Tab closed" : "Current tab closed"), false);
+  controller->CloseTab(
+      target,
+      base::BindOnce(&CompleteStatus,
+                     target_id ? "Tab closed" : "Current tab closed",
+                     std::move(callback)));
 }
 
-void HandleResize(MCPServer* server,
-                  content::WebContents* web_contents,
+void HandleResize(BrowserController* controller,
                   base::DictValue args,
                   ToolResultCallback callback) {
-  auto* runtime = server->runtime();
-  if (!runtime) {
-    std::move(callback).Run(TextContent("No browser runtime"), true);
-    return;
-  }
-
   auto width = args.FindInt("width").value_or(1280);
   auto height = args.FindInt("height").value_or(720);
 
-  runtime->ResizeActive(gfx::Size(width, height));
-
-  std::move(callback).Run(
-      TextContent("Resized to " + base::NumberToString(width) + "x" +
-                  base::NumberToString(height)),
-      false);
+  controller->ResizeActive(
+      gfx::Size(width, height),
+      base::BindOnce(&CompleteStatus,
+                     "Resized to " + base::NumberToString(width) + "x" +
+                         base::NumberToString(height),
+                     std::move(callback)));
 }
 
 }  // namespace
@@ -125,31 +111,40 @@ void RegisterTabTools(MCPServer& server) {
       "browser_tab_list",
       "List all open browser tabs",
       SchemaObject(base::DictValue()),
-      base::BindRepeating(&HandleTabs, base::Unretained(&server)),
+      base::BindRepeating(&HandleTabs),
   });
 
   server.RegisterTool({
       "browser_tab_new",
       "Open a new browser tab",
-      SchemaObject(base::DictValue().Set("url", SchemaString("URL to open in the new tab")), {}),
-      base::BindRepeating(&HandleNewTab, base::Unretained(&server)),
+      SchemaObject(
+          base::DictValue().Set(
+              "url", SchemaString("URL to open in the new tab")),
+          {}),
+      base::BindRepeating(&HandleNewTab),
   });
 
   server.RegisterTool({
       "browser_close",
       "Close a browser tab",
-      SchemaObject(
-          base::DictValue().Set("targetId", SchemaString("Target ID of the tab to close (closes current if omitted)")),
-          {}),
-      base::BindRepeating(&HandleClose, base::Unretained(&server)),
+      SchemaObject(base::DictValue().Set(
+                       "targetId",
+                       SchemaString(
+                           "Target ID of the tab to close (closes current if omitted)")),
+                   {}),
+      base::BindRepeating(&HandleClose),
   });
 
   server.RegisterTool({
       "browser_resize",
       "Resize the browser viewport",
-      SchemaObject(base::DictValue().Set("width", SchemaInt("Viewport width in pixels")).Set("height", SchemaInt("Viewport height in pixels")),
+      SchemaObject(base::DictValue()
+                       .Set("width",
+                            SchemaInt("Viewport width in pixels"))
+                       .Set("height",
+                            SchemaInt("Viewport height in pixels")),
                    {}),
-      base::BindRepeating(&HandleResize, base::Unretained(&server)),
+      base::BindRepeating(&HandleResize),
   });
 }
 

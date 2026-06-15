@@ -14,6 +14,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "browserd/browser_runtime.h"
+#include "browserd/core/browser_controller.h"
 #include "browserd/headless_runtime.h"
 #include "browserd/mcp/tools/cookie_tools.h"
 #include "browserd/mcp/tools/evaluate_tools.h"
@@ -22,7 +23,6 @@
 #include "browserd/mcp/tools/snapshot_tools.h"
 #include "browserd/mcp/tools/tab_tools.h"
 #include "browserd/mcp/tools/wait_tools.h"
-#include "content/public/browser/web_contents.h"
 #include "headless/public/headless_browser.h"
 
 namespace browserd {
@@ -108,49 +108,18 @@ void App::OnBrowserStart(headless::HeadlessBrowser* browser) {
 
 void App::Start(std::unique_ptr<BrowserRuntime> runtime,
                 scoped_refptr<base::SequencedTaskRunner> task_runner) {
-  runtime_ = std::move(runtime);
+  controller_ =
+      std::make_unique<BrowserController>(std::move(runtime), task_runner);
 
   RegisterTools();
 
-  mcp_server_.InjectScriptOnNewDocument(
-      "window.__browserdLogs = [];"
-      "(function() {"
-      "  var orig = {"
-      "    log: console.log,"
-      "    warn: console.warn,"
-      "    error: console.error,"
-      "    info: console.info,"
-      "    debug: console.debug"
-      "  };"
-      "  function capture(level, args) {"
-      "    try {"
-      "      window.__browserdLogs.push({"
-      "        level: level,"
-      "        text: Array.prototype.map.call(args, function(a) {"
-      "          try { return typeof a === 'object' ? JSON.stringify(a) : String(a); }"
-      "          catch(e) { return String(a); }"
-      "        }).join(' '),"
-      "        timestamp: Date.now()"
-      "      });"
-      "      if (window.__browserdLogs.length > 1000)"
-      "        window.__browserdLogs.shift();"
-      "    } catch(e) {}"
-      "  }"
-      "  console.log = function() { capture('log', arguments); orig.log.apply(console, arguments); };"
-      "  console.warn = function() { capture('warn', arguments); orig.warn.apply(console, arguments); };"
-      "  console.error = function() { capture('error', arguments); orig.error.apply(console, arguments); };"
-      "  console.info = function() { capture('info', arguments); orig.info.apply(console, arguments); };"
-      "  console.debug = function() { capture('debug', arguments); orig.debug.apply(console, arguments); };"
-      "})();");
-
-  mcp_server_.SetRuntime(runtime_.get());
-  mcp_server_.RefreshActiveWebContents();
+  mcp_server_.SetController(controller_.get());
   std::optional<MCPHttpConfig> http_config = GetMCPHttpConfig();
   if (http_config.has_value() && IsInvalidHttpConfig(http_config.value())) {
     base::Process::TerminateCurrentProcessImmediately(1);
   }
 
-  mcp_server_.Start(std::move(task_runner), !http_config.has_value());
+  mcp_server_.Start(controller_->task_runner(), !http_config.has_value());
   if (http_config.has_value() &&
       !mcp_server_.StartHttpTransport(http_config->host, http_config->port,
                                       http_config->token)) {

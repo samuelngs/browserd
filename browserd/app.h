@@ -16,6 +16,7 @@ class HeadlessBrowser;
 
 namespace browserd {
 
+class BrowserController;
 class BrowserRuntime;
 
 class App {
@@ -33,7 +34,7 @@ class App {
  private:
   void RegisterTools();
 
-  std::unique_ptr<BrowserRuntime> runtime_;
+  std::unique_ptr<BrowserController> controller_;
   MCPServer mcp_server_;
 };
 

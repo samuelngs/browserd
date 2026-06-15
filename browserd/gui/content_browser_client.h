@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 
+#include "browserd/gui/browser_main_parts.h"
 #include "content/public/browser/content_browser_client.h"
 
 namespace base {
@@ -23,6 +24,8 @@ namespace browserd::gui {
 class ContentBrowserClient : public content::ContentBrowserClient {
  public:
   ContentBrowserClient();
+  explicit ContentBrowserClient(
+      BrowserMainParts::RuntimeReadyCallback runtime_ready_callback);
   ~ContentBrowserClient() override;
 
   ContentBrowserClient(const ContentBrowserClient&) = delete;
@@ -37,6 +40,8 @@ class ContentBrowserClient : public content::ContentBrowserClient {
   std::string GetProduct() override;
   std::string GetUserAgent() override;
   blink::UserAgentMetadata GetUserAgentMetadata() override;
+
+  BrowserMainParts::RuntimeReadyCallback runtime_ready_callback_;
 };
 
 }  // namespace browserd::gui

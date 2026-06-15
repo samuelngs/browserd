@@ -7,17 +7,15 @@
 #include "base/functional/callback.h"
 #include "base/values.h"
 
-namespace content {
-class WebContents;
-}
-
 namespace browserd {
+
+class BrowserController;
 
 using ToolResultCallback =
     base::OnceCallback<void(base::ListValue content, bool is_error)>;
 
 using ToolHandler =
-    base::RepeatingCallback<void(content::WebContents* web_contents,
+    base::RepeatingCallback<void(BrowserController* controller,
                                  base::DictValue arguments,
                                  ToolResultCallback callback)>;
 

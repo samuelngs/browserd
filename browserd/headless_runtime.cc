@@ -75,6 +75,32 @@ content::WebContents* HeadlessRuntime::active_web_contents() const {
   return active_web_contents_;
 }
 
+content::WebContents* HeadlessRuntime::GetWebContentsByTargetId(
+    const std::string& target_id) const {
+  headless::HeadlessWebContents* contents = FindByTargetId(target_id);
+  if (!contents) {
+    return nullptr;
+  }
+  auto* impl = headless::HeadlessWebContentsImpl::From(contents);
+  return impl ? impl->web_contents() : nullptr;
+}
+
+std::vector<content::WebContents*> HeadlessRuntime::AllWebContents() const {
+  std::vector<content::WebContents*> web_contents_list;
+  auto* context = ToImpl(browser_context_);
+  if (!context) {
+    return web_contents_list;
+  }
+
+  for (auto* contents : context->GetAllWebContents()) {
+    auto* impl = headless::HeadlessWebContentsImpl::From(contents);
+    if (impl && impl->web_contents()) {
+      web_contents_list.push_back(impl->web_contents());
+    }
+  }
+  return web_contents_list;
+}
+
 std::vector<BrowserTabInfo> HeadlessRuntime::ListTabs() const {
   std::vector<BrowserTabInfo> tabs;
   auto* context = ToImpl(browser_context_);

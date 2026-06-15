@@ -1,85 +1,102 @@
 #include "browserd/mcp/tools/cookie_tools.h"
 
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
+
 #include "base/functional/bind.h"
-#include "base/strings/string_number_conversions.h"
-#include "base/time/time.h"
+#include "browserd/core/browser_controller.h"
 #include "browserd/mcp/mcp_server.h"
 #include "browserd/mcp/mcp_tool.h"
-#include "content/public/browser/browser_context.h"
-#include "content/public/browser/storage_partition.h"
-#include "content/public/browser/web_contents.h"
-#include "net/cookies/canonical_cookie.h"
-#include "net/cookies/cookie_access_result.h"
-#include "net/cookies/cookie_options.h"
-#include "net/cookies/cookie_partition_key_collection.h"
-#include "services/network/public/mojom/cookie_manager.mojom.h"
+#include "url/gurl.h"
 
 namespace browserd {
-
 namespace {
 
-network::mojom::CookieManager* GetCookieManager(
-    content::WebContents* web_contents) {
-  return web_contents->GetBrowserContext()
-      ->GetDefaultStoragePartition()
-      ->GetCookieManagerForBrowserProcess();
-}
+void FormatCookieList(ToolResultCallback callback,
+                      BrowserResult<std::vector<CookieInfo>> result) {
+  if (!result.ok()) {
+    std::move(callback).Run(TextContent(result.status.message), true);
+    return;
+  }
 
-void FormatCookieList(ToolResultCallback cb,
-                      const std::vector<net::CanonicalCookie>& cookies) {
+  const auto& cookies = result.value.value();
   if (cookies.empty()) {
-    std::move(cb).Run(TextContent("No cookies found"), false);
+    std::move(callback).Run(TextContent("No cookies found"), false);
     return;
   }
 
   std::string output;
   for (const auto& cookie : cookies) {
-    output += cookie.Name() + "=" + cookie.Value();
-    output += " (domain=" + cookie.Domain();
-    output += ", path=" + cookie.Path() + ")";
+    output += cookie.name + "=" + cookie.value;
+    output += " (domain=" + cookie.domain;
+    output += ", path=" + cookie.path + ")";
     output += "\n";
   }
 
-  std::move(cb).Run(TextContent(output), false);
+  std::move(callback).Run(TextContent(output), false);
 }
 
-void HandleCookieList(content::WebContents* web_contents,
-                      base::DictValue args,
-                      ToolResultCallback callback) {
-  auto* cm = GetCookieManager(web_contents);
-  if (!cm) {
-    std::move(callback).Run(TextContent("No cookie manager"), true);
+void FormatCookieGet(std::string cookie_name,
+                     ToolResultCallback callback,
+                     BrowserResult<CookieInfo> result) {
+  if (!result.ok()) {
+    bool is_not_found = result.status.code == BrowserStatusCode::kNotFound;
+    std::move(callback).Run(TextContent(result.status.message),
+                            !is_not_found);
     return;
   }
 
-  const std::string* url_str = args.FindString("url");
-  if (url_str) {
+  const CookieInfo& cookie = result.value.value();
+  std::string info = cookie.name + "=" + cookie.value +
+                     "\ndomain: " + cookie.domain +
+                     "\npath: " + cookie.path +
+                     "\nsecure: " + (cookie.secure ? "true" : "false") +
+                     "\nhttpOnly: " + (cookie.http_only ? "true" : "false");
+  std::move(callback).Run(TextContent(info), false);
+}
+
+void CompleteStatus(std::string success_message,
+                    ToolResultCallback callback,
+                    BrowserStatus status) {
+  if (!status.ok()) {
+    std::move(callback).Run(TextContent(status.message), true);
+    return;
+  }
+  std::move(callback).Run(TextContent(success_message), false);
+}
+
+void CompleteDelete(std::string cookie_name,
+                    ToolResultCallback callback,
+                    BrowserStatus status) {
+  if (!status.ok() && status.code != BrowserStatusCode::kNotFound) {
+    std::move(callback).Run(TextContent(status.message), true);
+    return;
+  }
+  std::move(callback).Run(
+      TextContent("Cookie '" + cookie_name + "' deleted"), false);
+}
+
+void HandleCookieList(BrowserController* controller,
+                      base::DictValue args,
+                      ToolResultCallback callback) {
+  CookieListOptions options;
+  if (const std::string* url_str = args.FindString("url")) {
     GURL url(*url_str);
     if (!url.is_valid()) {
       std::move(callback).Run(TextContent("Invalid URL"), true);
       return;
     }
-    cm->GetCookieList(
-        url, net::CookieOptions::MakeAllInclusive(),
-        net::CookiePartitionKeyCollection(),
-        base::BindOnce(
-            [](ToolResultCallback cb,
-               const net::CookieAccessResultList& included,
-               const net::CookieAccessResultList&) {
-              std::vector<net::CanonicalCookie> cookies;
-              for (const auto& entry : included) {
-                cookies.push_back(entry.cookie);
-              }
-              FormatCookieList(std::move(cb), cookies);
-            },
-            std::move(callback)));
-  } else {
-    cm->GetAllCookies(
-        base::BindOnce(&FormatCookieList, std::move(callback)));
+    options.url = *url_str;
   }
+
+  controller->ListCookies(
+      std::nullopt, std::move(options),
+      base::BindOnce(&FormatCookieList, std::move(callback)));
 }
 
-void HandleCookieGet(content::WebContents* web_contents,
+void HandleCookieGet(BrowserController* controller,
                      base::DictValue args,
                      ToolResultCallback callback) {
   const std::string* name = args.FindString("name");
@@ -89,36 +106,14 @@ void HandleCookieGet(content::WebContents* web_contents,
     return;
   }
 
-  auto* cm = GetCookieManager(web_contents);
-  if (!cm) {
-    std::move(callback).Run(TextContent("No cookie manager"), true);
-    return;
-  }
-
-  std::string name_copy = *name;
-
-  cm->GetAllCookies(base::BindOnce(
-      [](std::string cookie_name, ToolResultCallback cb,
-         const std::vector<net::CanonicalCookie>& cookies) {
-        for (const auto& cookie : cookies) {
-          if (cookie.Name() == cookie_name) {
-            std::string info =
-                cookie.Name() + "=" + cookie.Value() +
-                "\ndomain: " + cookie.Domain() +
-                "\npath: " + cookie.Path() +
-                "\nsecure: " + (cookie.SecureAttribute() ? "true" : "false") +
-                "\nhttpOnly: " + (cookie.IsHttpOnly() ? "true" : "false");
-            std::move(cb).Run(TextContent(info), false);
-            return;
-          }
-        }
-        std::move(cb).Run(
-            TextContent("Cookie '" + cookie_name + "' not found"), false);
-      },
-      std::move(name_copy), std::move(callback)));
+  CookieGetOptions options;
+  options.name = *name;
+  controller->GetCookie(
+      std::nullopt, std::move(options),
+      base::BindOnce(&FormatCookieGet, *name, std::move(callback)));
 }
 
-void HandleCookieSet(content::WebContents* web_contents,
+void HandleCookieSet(BrowserController* controller,
                      base::DictValue args,
                      ToolResultCallback callback) {
   const std::string* name = args.FindString("name");
@@ -129,59 +124,28 @@ void HandleCookieSet(content::WebContents* web_contents,
     return;
   }
 
-  auto* cm = GetCookieManager(web_contents);
-  if (!cm) {
-    std::move(callback).Run(TextContent("No cookie manager"), true);
-    return;
+  CookieSetOptions options;
+  options.name = *name;
+  options.value = *value;
+  if (const std::string* domain = args.FindString("domain")) {
+    options.domain = *domain;
   }
-
-  const std::string* url_str = args.FindString("url");
-  GURL url = url_str ? GURL(*url_str)
-                     : web_contents->GetLastCommittedURL();
-
-  const std::string* domain = args.FindString("domain");
-  const std::string* path = args.FindString("path");
-  bool secure = args.FindBool("secure").value_or(false);
-  bool http_only = args.FindBool("httpOnly").value_or(false);
-
-  auto cookie = net::CanonicalCookie::CreateSanitizedCookie(
-      url, *name, *value,
-      domain ? *domain : "",
-      path ? *path : "/",
-      base::Time::Now(),
-      base::Time::Now() + base::Days(365),
-      base::Time::Now(),
-      secure, http_only,
-      net::CookieSameSite::LAX_MODE,
-      net::COOKIE_PRIORITY_DEFAULT,
-      std::nullopt, nullptr);
-
-  if (!cookie) {
-    std::move(callback).Run(TextContent("Failed to create cookie"), true);
-    return;
+  if (const std::string* path = args.FindString("path")) {
+    options.path = *path;
   }
+  if (const std::string* url = args.FindString("url")) {
+    options.url = *url;
+  }
+  options.secure = args.FindBool("secure").value_or(false);
+  options.http_only = args.FindBool("httpOnly").value_or(false);
 
-  std::string name_copy = *name;
-
-  cm->SetCanonicalCookie(
-      *cookie, url,
-      net::CookieOptions::MakeAllInclusive(),
-      base::BindOnce(
-          [](std::string cookie_name, ToolResultCallback cb,
-             net::CookieAccessResult result) {
-            if (result.status.IsInclude()) {
-              std::move(cb).Run(
-                  TextContent("Cookie '" + cookie_name + "' set"), false);
-            } else {
-              std::move(cb).Run(
-                  TextContent("Failed to set cookie '" + cookie_name + "'"),
-                  true);
-            }
-          },
-          std::move(name_copy), std::move(callback)));
+  controller->SetCookie(
+      std::nullopt, std::move(options),
+      base::BindOnce(&CompleteStatus, "Cookie '" + *name + "' set",
+                     std::move(callback)));
 }
 
-void HandleCookieDelete(content::WebContents* web_contents,
+void HandleCookieDelete(BrowserController* controller,
                         base::DictValue args,
                         ToolResultCallback callback) {
   const std::string* name = args.FindString("name");
@@ -191,54 +155,27 @@ void HandleCookieDelete(content::WebContents* web_contents,
     return;
   }
 
-  auto* cm = GetCookieManager(web_contents);
-  if (!cm) {
-    std::move(callback).Run(TextContent("No cookie manager"), true);
-    return;
+  CookieDeleteOptions options;
+  options.name = *name;
+  if (const std::string* url = args.FindString("url")) {
+    options.url = *url;
+  }
+  if (const std::string* domain = args.FindString("domain")) {
+    options.domain = *domain;
   }
 
-  auto filter = network::mojom::CookieDeletionFilter::New();
-  filter->cookie_name = *name;
-
-  const std::string* domain = args.FindString("domain");
-  if (domain) {
-    filter->host_name = *domain;
-  }
-
-  std::string name_copy = *name;
-
-  cm->DeleteCookies(
-      std::move(filter),
-      base::BindOnce(
-          [](std::string cookie_name, ToolResultCallback cb,
-             uint32_t num_deleted) {
-            std::move(cb).Run(
-                TextContent("Cookie '" + cookie_name + "' deleted (" +
-                            base::NumberToString(num_deleted) + ")"),
-                false);
-          },
-          std::move(name_copy), std::move(callback)));
+  controller->DeleteCookie(
+      std::nullopt, std::move(options),
+      base::BindOnce(&CompleteDelete, *name, std::move(callback)));
 }
 
-void HandleCookieClear(content::WebContents* web_contents,
+void HandleCookieClear(BrowserController* controller,
                        base::DictValue args,
                        ToolResultCallback callback) {
-  auto* cm = GetCookieManager(web_contents);
-  if (!cm) {
-    std::move(callback).Run(TextContent("No cookie manager"), true);
-    return;
-  }
-
-  cm->DeleteCookies(
-      network::mojom::CookieDeletionFilter::New(),
-      base::BindOnce(
-          [](ToolResultCallback cb, uint32_t num_deleted) {
-            std::move(cb).Run(
-                TextContent("All cookies cleared (" +
-                            base::NumberToString(num_deleted) + ")"),
-                false);
-          },
-          std::move(callback)));
+  controller->ClearCookies(
+      std::nullopt,
+      base::BindOnce(&CompleteStatus, "All cookies cleared",
+                     std::move(callback)));
 }
 
 }  // namespace
@@ -247,32 +184,48 @@ void RegisterCookieTools(MCPServer& server) {
   server.RegisterTool({
       "browser_cookie_list",
       "List cookies, optionally filtered by URL",
-      SchemaObject(base::DictValue().Set("url", SchemaString("URL to filter cookies by")), {}),
+      SchemaObject(
+          base::DictValue().Set("url",
+                                SchemaString("URL to filter cookies by")),
+          {}),
       base::BindRepeating(&HandleCookieList),
   });
 
   server.RegisterTool({
       "browser_cookie_get",
       "Get a specific cookie by name",
-      SchemaObject(base::DictValue().Set("name", SchemaString("Cookie name")), {"name"}),
+      SchemaObject(
+          base::DictValue().Set("name", SchemaString("Cookie name")),
+          {"name"}),
       base::BindRepeating(&HandleCookieGet),
   });
 
   server.RegisterTool({
       "browser_cookie_set",
       "Set a cookie",
-      SchemaObject(
-          base::DictValue().Set("name", SchemaString("Cookie name")).Set("value", SchemaString("Cookie value")).Set("domain", SchemaString("Cookie domain")).Set("path", SchemaString("Cookie path")).Set("url", SchemaString("URL to associate cookie with")).Set("secure", SchemaBool("Secure flag")).Set("httpOnly", SchemaBool("HttpOnly flag")),
-          {"name", "value"}),
+      SchemaObject(base::DictValue()
+                       .Set("name", SchemaString("Cookie name"))
+                       .Set("value", SchemaString("Cookie value"))
+                       .Set("domain", SchemaString("Cookie domain"))
+                       .Set("path", SchemaString("Cookie path"))
+                       .Set("url",
+                            SchemaString("URL to associate cookie with"))
+                       .Set("secure", SchemaBool("Secure flag"))
+                       .Set("httpOnly", SchemaBool("HttpOnly flag")),
+                   {"name", "value"}),
       base::BindRepeating(&HandleCookieSet),
   });
 
   server.RegisterTool({
       "browser_cookie_delete",
       "Delete a cookie by name",
-      SchemaObject(
-          base::DictValue().Set("name", SchemaString("Cookie name to delete")).Set("url", SchemaString("URL the cookie belongs to")).Set("domain", SchemaString("Cookie domain")),
-          {"name"}),
+      SchemaObject(base::DictValue()
+                       .Set("name",
+                            SchemaString("Cookie name to delete"))
+                       .Set("url",
+                            SchemaString("URL the cookie belongs to"))
+                       .Set("domain", SchemaString("Cookie domain")),
+                   {"name"}),
       base::BindRepeating(&HandleCookieDelete),
   });
 

@@ -1,5 +1,7 @@
 #include "browserd/gui/content_browser_client.h"
 
+#include <utility>
+
 #include "base/command_line.h"
 #include "browserd/gui/browser_main_parts.h"
 #include "browserd/switches.h"
@@ -11,11 +13,15 @@
 namespace browserd::gui {
 
 ContentBrowserClient::ContentBrowserClient() = default;
+ContentBrowserClient::ContentBrowserClient(
+    BrowserMainParts::RuntimeReadyCallback runtime_ready_callback)
+    : runtime_ready_callback_(std::move(runtime_ready_callback)) {}
+
 ContentBrowserClient::~ContentBrowserClient() = default;
 
 std::unique_ptr<content::BrowserMainParts>
 ContentBrowserClient::CreateBrowserMainParts(bool is_integration_test) {
-  return std::make_unique<BrowserMainParts>();
+  return std::make_unique<BrowserMainParts>(std::move(runtime_ready_callback_));
 }
 
 void ContentBrowserClient::AppendExtraCommandLineSwitches(

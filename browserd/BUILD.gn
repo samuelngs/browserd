@@ -12,6 +12,36 @@ source_set("runtime") {
   ]
 }
 
+source_set("browserd_core") {
+  sources = [
+    "core/browser_controller.cc",
+    "core/browser_controller.h",
+    "core/browser_interactions.cc",
+    "core/browser_result.cc",
+    "core/browser_result.h",
+  ]
+
+  deps = [
+    ":runtime",
+    "//base",
+    "//components/input",
+    "//components/viz/common",
+    "//content/public/browser",
+    "//content/public/common",
+    "//net",
+    "//services/network/public/mojom",
+    "//skia",
+    "//third_party/blink/public/common",
+    "//ui/accessibility",
+    "//ui/base",
+    "//ui/events",
+    "//ui/events:dom_keycode_converter",
+    "//ui/gfx",
+    "//ui/gfx/codec",
+    "//url",
+  ]
+}
+
 executable("browserd") {
   configs -= [ "//build/config/compiler:thinlto_optimize_default" ]
   configs += [ "//build/config/compiler:thinlto_optimize_max" ]
@@ -23,11 +53,13 @@ executable("browserd") {
 
   deps = [
     ":browserd_lib",
+    ":browserd_runtime_lib",
     "//components/os_crypt/common:switches",
     "//content/public/app",
     "//headless:headless_shell_lib",
     "//sandbox/policy",
     "//ui/gl",
+    "//v8:v8_headers",
   ]
 
   if (is_mac) {
@@ -35,12 +67,34 @@ executable("browserd") {
   }
 }
 
-source_set("browserd_lib") {
+shared_library("browserd_embed") {
+  sources = [
+    "embed/browserd_embed.cc",
+    "embed/browserd_embed.h",
+  ]
+
+  deps = [
+    ":browserd_core",
+    ":browserd_runtime_lib",
+    ":runtime",
+    "//base",
+    "//content/public/common",
+    "//headless:headless_shell_lib",
+    "//ui/gfx/geometry",
+    "//url",
+  ]
+}
+
+executable("browserd_embed_smoke") {
+  sources = [ "embed/browserd_embed_smoke.cc" ]
+
+  deps = [ ":browserd_embed" ]
+}
+
+source_set("browserd_runtime_lib") {
   defines = []
 
   sources = [
-    "app.cc",
-    "app.h",
     "gui/browser_context.cc",
     "gui/browser_context.h",
     "gui/browser_main_parts.cc",
@@ -58,6 +112,8 @@ source_set("browserd_lib") {
     "gui/main_delegate.h",
     "headless_runtime.cc",
     "headless_runtime.h",
+    "startup/browserd_main.cc",
+    "startup/browserd_main.h",
     "switches.h",
     "user_data_dir.cc",
     "user_data_dir.h",
@@ -85,7 +141,6 @@ source_set("browserd_lib") {
 
   deps = [
     ":runtime",
-    "//browserd/mcp",
     "//base",
     "//components/embedder_support:user_agent",
     "//content/public/browser",
@@ -94,11 +149,20 @@ source_set("browserd_lib") {
     "//content/public/renderer",
     "//headless:headless_renderer",
     "//headless:headless_shell_lib",
+    "//sandbox/policy",
     "//ui/base",
     "//ui/display",
     "//ui/gfx/geometry",
+    "//ui/gl",
     "//url",
   ]
+
+  if (is_mac) {
+    deps += [
+      "//components/os_crypt/common:switches",
+      "//sandbox/mac:seatbelt",
+    ]
+  }
 
   if (headless_use_embedded_resources) {
     defines += [ "HEADLESS_USE_EMBEDDED_RESOURCES" ]
@@ -117,4 +181,20 @@ source_set("browserd_lib") {
       "//ui/wm/public",
     ]
   }
+}
+
+source_set("browserd_lib") {
+  sources = [
+    "app.cc",
+    "app.h",
+  ]
+
+  deps = [
+    ":browserd_core",
+    ":browserd_runtime_lib",
+    ":runtime",
+    "//base",
+    "//browserd/mcp",
+    "//headless:headless_shell_lib",
+  ]
 }

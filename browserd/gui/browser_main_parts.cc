@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "base/check.h"
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/logging.h"
@@ -17,7 +18,9 @@
 
 namespace browserd::gui {
 
-BrowserMainParts::BrowserMainParts() = default;
+BrowserMainParts::BrowserMainParts(RuntimeReadyCallback runtime_ready_callback)
+    : runtime_ready_callback_(std::move(runtime_ready_callback)) {}
+
 BrowserMainParts::~BrowserMainParts() = default;
 
 int BrowserMainParts::PreMainMessageLoopRun() {
@@ -41,7 +44,10 @@ int BrowserMainParts::PreMainMessageLoopRun() {
     return 1;
   }
 
-  app_.Start(std::move(runtime), content::GetUIThreadTaskRunner({}));
+  scoped_refptr<base::SequencedTaskRunner> task_runner =
+      content::GetUIThreadTaskRunner({});
+  CHECK(runtime_ready_callback_);
+  std::move(runtime_ready_callback_).Run(std::move(runtime), task_runner);
   return 0;
 }
 

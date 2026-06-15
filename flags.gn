@@ -11,4 +11,5 @@ headless_use_embedded_resources = true
 headless_enable_commands = false
 icu_use_data_file = false
 v8_use_external_startup_data = false
+use_static_angle = true
 root_extra_deps = [ "//browserd" ]

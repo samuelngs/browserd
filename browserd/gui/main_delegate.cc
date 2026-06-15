@@ -1,5 +1,7 @@
 #include "browserd/gui/main_delegate.h"
 
+#include <utility>
+
 #include "base/check.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
@@ -59,6 +61,11 @@ void InitializeResourceBundle(const base::CommandLine& command_line) {
 }  // namespace
 
 MainDelegate::MainDelegate() = default;
+
+MainDelegate::MainDelegate(
+    BrowserMainParts::RuntimeReadyCallback runtime_ready_callback)
+    : runtime_ready_callback_(std::move(runtime_ready_callback)) {}
+
 MainDelegate::~MainDelegate() = default;
 
 std::optional<int> MainDelegate::BasicStartupComplete() {
@@ -84,7 +91,9 @@ std::optional<int> MainDelegate::PreBrowserMain() {
 }
 
 content::ContentBrowserClient* MainDelegate::CreateContentBrowserClient() {
-  content_browser_client_ = std::make_unique<ContentBrowserClient>();
+  content_browser_client_ =
+      std::make_unique<ContentBrowserClient>(
+          std::move(runtime_ready_callback_));
   return content_browser_client_.get();
 }
 
