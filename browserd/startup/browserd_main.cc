@@ -40,9 +40,9 @@ bool ShouldAutoEnableGpu(bool requested_gui, base::Environment* environment) {
 #endif
 }
 
-void MaybeEnableGpu(base::CommandLine* command_line,
-                    bool requested_gui,
-                    base::Environment* environment) {
+void ConfigureGpu(base::CommandLine* command_line,
+                  bool requested_gui,
+                  base::Environment* environment) {
   if (command_line->HasSwitch(headless::switches::kEnableGPU) ||
       command_line->HasSwitch(::switches::kDisableGpu)) {
     return;
@@ -50,6 +50,8 @@ void MaybeEnableGpu(base::CommandLine* command_line,
 
   if (ShouldAutoEnableGpu(requested_gui, environment)) {
     command_line->AppendSwitch(headless::switches::kEnableGPU);
+  } else {
+    command_line->AppendSwitch(::switches::kDisableGpu);
   }
 }
 
@@ -100,7 +102,7 @@ void PrintHelp() {
       << "\n"
       << "GPU:\n"
       << "  Headless mode enables GPU automatically on desktop sessions. On Linux,\n"
-      << "  GPU is auto-enabled only when DISPLAY or WAYLAND_DISPLAY is set.\n";
+      << "  GPU is disabled unless DISPLAY or WAYLAND_DISPLAY is set.\n";
 }
 
 bool IsGuiRequested(const base::CommandLine& command_line,
@@ -126,7 +128,7 @@ void ApplyDefaultCommandLineSwitches(int argc,
     MaybeInitializeMacSandbox(argc, argv);
   }
   command_line->AppendSwitch(sandbox::policy::switches::kNoSandbox);
-  MaybeEnableGpu(command_line, requested_gui, environment);
+  ConfigureGpu(command_line, requested_gui, environment);
   command_line->AppendSwitch(::switches::kEnableUnsafeSwiftShader);
   command_line->AppendSwitch("use-fake-device-for-media-stream");
 #if BUILDFLAG(IS_MAC)
