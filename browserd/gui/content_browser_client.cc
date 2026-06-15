@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "browserd/embedder_switches.h"
 #include "browserd/gui/browser_main_parts.h"
 #include "browserd/switches.h"
 #include "components/embedder_support/user_agent_utils.h"
@@ -28,6 +29,7 @@ void ContentBrowserClient::AppendExtraCommandLineSwitches(
     base::CommandLine* command_line,
     int child_process_id) {
   command_line->AppendSwitch(browserd::switches::kGui);
+  browserd::AppendEmbedderSwitchesForChild(command_line);
 }
 
 std::string ContentBrowserClient::GetAcceptLangs(

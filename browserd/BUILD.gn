@@ -42,6 +42,18 @@ source_set("browserd_core") {
   ]
 }
 
+source_set("embedder_switches") {
+  sources = [
+    "embedder_switches.cc",
+    "embedder_switches.h",
+  ]
+
+  deps = [
+    "//base",
+    "//content/public/common",
+  ]
+}
+
 executable("browserd") {
   configs -= [ "//build/config/compiler:thinlto_optimize_default" ]
   configs += [ "//build/config/compiler:thinlto_optimize_max" ]
@@ -75,6 +87,7 @@ shared_library("browserd_embed") {
 
   deps = [
     ":browserd_core",
+    ":embedder_switches",
     ":browserd_runtime_lib",
     ":runtime",
     "//base",
@@ -89,6 +102,17 @@ executable("browserd_embed_smoke") {
   sources = [ "embed/browserd_embed_smoke.cc" ]
 
   deps = [ ":browserd_embed" ]
+}
+
+executable("browserd_embedder_switches_test") {
+  sources = [ "embedder_switches_test.cc" ]
+
+  deps = [
+    ":browserd_runtime_lib",
+    ":embedder_switches",
+    "//base",
+    "//content/public/common",
+  ]
 }
 
 source_set("browserd_runtime_lib") {
@@ -140,6 +164,7 @@ source_set("browserd_runtime_lib") {
   }
 
   deps = [
+    ":embedder_switches",
     ":runtime",
     "//base",
     "//components/embedder_support:user_agent",

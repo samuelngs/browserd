@@ -26,11 +26,24 @@ struct BrowserdProcessResult {
     exit_code: i32,
 }
 
+const BROWSERD_SWITCH_BROWSER: u32 = 1 << 0;
+const BROWSERD_SWITCH_GPU_CHILD: u32 = 1 << 1;
+
+#[repr(C)]
+struct BrowserdSwitch {
+    size: u32,
+    name: *const c_char,
+    value: *const c_char,
+    scope: u32,
+}
+
 #[repr(C)]
 struct BrowserdConfig {
     size: u32,
     gui: bool,
     user_data_dir: *const c_char,
+    switches: *const BrowserdSwitch,
+    switches_len: usize,
 }
 
 #[repr(C)]
@@ -148,10 +161,21 @@ fn main() {
         process::exit(process_result.exit_code);
     }
 
+    let disable_features = CString::new("disable-features").unwrap();
+    let fallback_feature = CString::new("FallbackToSWIfGLES3NotSupported").unwrap();
+    let switches = [BrowserdSwitch {
+        size: std::mem::size_of::<BrowserdSwitch>() as u32,
+        name: disable_features.as_ptr(),
+        value: fallback_feature.as_ptr(),
+        scope: BROWSERD_SWITCH_BROWSER | BROWSERD_SWITCH_GPU_CHILD,
+    }];
+
     let config = BrowserdConfig {
         size: std::mem::size_of::<BrowserdConfig>() as u32,
         gui: false,
         user_data_dir: std::ptr::null(),
+        switches: switches.as_ptr(),
+        switches_len: switches.len(),
     };
     let exit_code = unsafe { browserd_run(&config, on_ready, std::ptr::null_mut()) };
     process::exit(exit_code);

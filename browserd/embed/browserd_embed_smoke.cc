@@ -11,6 +11,8 @@ constexpr char kGuiSmokeSwitch[] = "--gui-smoke";
 
 struct SmokeState {
   bool failed = false;
+  bool gui = false;
+  bool checked_title = false;
 };
 
 bool IsOk(browserd_status_t status, const char* step) {
@@ -58,6 +60,32 @@ void OnEvaluate(browserd_session_t* session,
     Finish(session, state, false);
     return;
   }
+
+  if (state->gui && !state->checked_title) {
+    state->checked_title = true;
+    std::string title(value.data, value.len);
+    if (title.find("Example") == std::string::npos) {
+      Finish(session, state, false);
+      return;
+    }
+    const char* webgl_renderer =
+        "(() => {"
+        "  try {"
+        "    const canvas = document.createElement('canvas');"
+        "    const gl = canvas.getContext('webgl') || "
+        "canvas.getContext('experimental-webgl');"
+        "    if (!gl) return 'unavailable';"
+        "    const ext = gl.getExtension('WEBGL_debug_renderer_info');"
+        "    return ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : 'available';"
+        "  } catch (e) { return 'unavailable'; }"
+        "})()";
+    if (browserd_evaluate(session, nullptr, webgl_renderer, &OnEvaluate,
+                          user_data) != 0) {
+      Finish(session, state, false);
+    }
+    return;
+  }
+
   if (browserd_snapshot(session, nullptr, &OnSnapshot, user_data) != 0) {
     Finish(session, state, false);
   }
@@ -90,6 +118,9 @@ void OnReady(browserd_session_t* session,
       "data:text/html,<html><head><title>browserd embed smoke</title></head>"
       "<body><button id='ok'>ok</button><script>console.log('ready')</script>"
       "</body></html>";
+  if (state->gui) {
+    url = "https://example.com";
+  }
   if (browserd_navigate(session, nullptr, url, &OnNavigate, user_data) != 0) {
     Finish(session, state, false);
   }
@@ -113,9 +144,22 @@ int main(int argc, const char** argv) {
   }
 
   SmokeState state;
+  state.gui = HasSwitch(argc, argv, kGuiSmokeSwitch);
+  browserd_switch_t switches[] = {
+      {
+          sizeof(browserd_switch_t),
+          "disable-features",
+          "FallbackToSWIfGLES3NotSupported",
+          BROWSERD_SWITCH_BROWSER | BROWSERD_SWITCH_GPU_CHILD,
+      },
+  };
   browserd_config_t config = {};
   config.size = sizeof(config);
-  config.gui = HasSwitch(argc, argv, kGuiSmokeSwitch);
+  config.gui = state.gui;
+  if (state.gui) {
+    config.switches = switches;
+    config.switches_len = sizeof(switches) / sizeof(switches[0]);
+  }
 
   int exit_code = browserd_run(&config, &OnReady, &state);
   if (state.failed) {

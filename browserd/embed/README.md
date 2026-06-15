@@ -23,3 +23,14 @@ quickly.
 Callback payload memory is borrowed. Strings, byte buffers, tabs, and cookies
 are valid only during the callback. Rust hosts must copy anything they need to
 keep after returning.
+
+`browserd_config_t.switches` lets embedders pass command-line policy without
+patching Chromium. Browser-scoped switches are applied to the browser process
+before browserd's default switches. GPU-child, renderer-child, and all-child
+switches are copied into browserd-owned memory and forwarded to GUI child
+processes from `ContentBrowserClient::AppendExtraCommandLineSwitches`.
+
+Use child-scoped switches when Chromium does not automatically forward a flag
+from the browser process. For example, pass `disable-features` with
+`FallbackToSWIfGLES3NotSupported` scoped to `BROWSERD_SWITCH_GPU_CHILD` to make
+sure the GPU process receives it.

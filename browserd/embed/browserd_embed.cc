@@ -19,6 +19,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "browserd/browser_runtime.h"
 #include "browserd/core/browser_controller.h"
+#include "browserd/embedder_switches.h"
 #include "browserd/headless_runtime.h"
 #include "browserd/startup/browserd_main.h"
 #include "browserd/switches.h"
@@ -328,8 +329,35 @@ const char* ConfigUserDataDir(const browserd_config_t* config) {
   return config->user_data_dir;
 }
 
+std::vector<browserd::EmbedderSwitch> ConfigSwitches(
+    const browserd_config_t* config) {
+  std::vector<browserd::EmbedderSwitch> switches;
+  if (!ConfigFieldPresent(config, offsetof(browserd_config_t, switches_len) +
+                                      sizeof(size_t)) ||
+      !config->switches || config->switches_len == 0) {
+    return switches;
+  }
+
+  switches.reserve(config->switches_len);
+  for (size_t i = 0; i < config->switches_len; ++i) {
+    const browserd_switch_t& input = UNSAFE_BUFFERS(config->switches[i]);
+    if (input.size < offsetof(browserd_switch_t, scope) + sizeof(uint32_t) ||
+        !input.name || input.name[0] == '\0' || input.scope == 0) {
+      continue;
+    }
+    std::optional<std::string> value;
+    if (input.value) {
+      value = std::string(input.value);
+    }
+    switches.emplace_back(input.name, std::move(value), input.scope);
+  }
+  return switches;
+}
+
 void ApplyRunConfig(const browserd_config_t* config) {
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  browserd::SetEmbedderSwitches(ConfigSwitches(config));
+  browserd::AppendEmbedderSwitchesForBrowser(command_line);
   if (ConfigRequestsGui(config)) {
     command_line->AppendSwitch(browserd::switches::kGui);
   }
@@ -412,11 +440,13 @@ void browserd_shutdown(browserd_session_t* session) {
   scoped_refptr<base::SequencedTaskRunner> runner = controller->task_runner();
   if (!runner || runner->RunsTasksInCurrentSequence()) {
     DestroySessionController(session);
+    browserd::ClearEmbedderSwitches();
     return;
   }
   runner->PostTask(FROM_HERE,
                    base::BindOnce(&DestroySessionController,
                                   base::Unretained(session)));
+  browserd::ClearEmbedderSwitches();
 }
 
 int browserd_tab_list(browserd_session_t* session,

@@ -45,10 +45,26 @@ typedef struct browserd_process_result {
   int exit_code;
 } browserd_process_result_t;
 
+typedef enum browserd_switch_scope {
+  BROWSERD_SWITCH_BROWSER = 1 << 0,
+  BROWSERD_SWITCH_GPU_CHILD = 1 << 1,
+  BROWSERD_SWITCH_RENDERER_CHILD = 1 << 2,
+  BROWSERD_SWITCH_ALL_CHILDREN = 1 << 3,
+} browserd_switch_scope_t;
+
+typedef struct browserd_switch {
+  uint32_t size;
+  const char* name;
+  const char* value;
+  uint32_t scope;
+} browserd_switch_t;
+
 typedef struct browserd_config {
   uint32_t size;
   bool gui;
   const char* user_data_dir;
+  const browserd_switch_t* switches;
+  size_t switches_len;
 } browserd_config_t;
 
 typedef struct browserd_string {

@@ -31,11 +31,12 @@ class ContentBrowserClient : public content::ContentBrowserClient {
   ContentBrowserClient(const ContentBrowserClient&) = delete;
   ContentBrowserClient& operator=(const ContentBrowserClient&) = delete;
 
+  void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
+                                      int child_process_id) override;
+
  private:
   std::unique_ptr<content::BrowserMainParts> CreateBrowserMainParts(
       bool is_integration_test) override;
-  void AppendExtraCommandLineSwitches(base::CommandLine* command_line,
-                                      int child_process_id) override;
   std::string GetAcceptLangs(content::BrowserContext* context) override;
   std::string GetProduct() override;
   std::string GetUserAgent() override;
