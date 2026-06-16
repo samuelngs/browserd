@@ -24,8 +24,58 @@ bool ExpectEqual(const std::string& label,
   return false;
 }
 
+bool ExpectHasSwitch(const std::string& label,
+                     const base::CommandLine& command_line,
+                     const std::string& name) {
+  if (command_line.HasSwitch(name)) {
+    return true;
+  }
+  std::cerr << label << ": expected switch `" << name << "`\n";
+  return false;
+}
+
+bool ExpectNoSwitch(const std::string& label,
+                    const base::CommandLine& command_line,
+                    const std::string& name) {
+  if (!command_line.HasSwitch(name)) {
+    return true;
+  }
+  std::cerr << label << ": unexpected switch `" << name << "`\n";
+  return false;
+}
+
+bool TestUnknownChildReceivesAllChildrenSwitch() {
+  browserd::SetEmbedderSwitches({
+      browserd::EmbedderSwitch("all-child", std::nullopt,
+                               browserd::kSwitchScopeAllChildren),
+  });
+
+  base::CommandLine child(base::CommandLine::NO_PROGRAM);
+  browserd::AppendEmbedderSwitchesForChild(&child);
+
+  bool ok = ExpectHasSwitch("unknown child all-child", child, "all-child");
+  browserd::ClearEmbedderSwitches();
+  return ok;
+}
+
+bool TestUnknownChildDoesNotReceiveGpuOnlySwitch() {
+  browserd::SetEmbedderSwitches({
+      browserd::EmbedderSwitch("gpu-only", std::nullopt,
+                               browserd::kSwitchScopeGpuChild),
+  });
+
+  base::CommandLine child(base::CommandLine::NO_PROGRAM);
+  browserd::AppendEmbedderSwitchesForChild(&child);
+
+  bool ok = ExpectNoSwitch("unknown child gpu-only", child, "gpu-only");
+  browserd::ClearEmbedderSwitches();
+  return ok;
+}
+
 bool TestContentBrowserClientForwardsGpuChildSwitch() {
   browserd::SetEmbedderSwitches({
+      browserd::EmbedderSwitch("all-child", std::nullopt,
+                               browserd::kSwitchScopeAllChildren),
       browserd::EmbedderSwitch(
           switches::kDisableFeatures,
           "FallbackToSWIfGLES3NotSupported",
@@ -45,12 +95,15 @@ bool TestContentBrowserClientForwardsGpuChildSwitch() {
     std::cerr << "gui switch was not appended to gpu child\n";
     ok = false;
   }
+  ok = ExpectHasSwitch("gpu child all-child", child, "all-child") && ok;
   browserd::ClearEmbedderSwitches();
   return ok;
 }
 
-bool TestRendererDoesNotReceiveGpuOnlySwitch() {
+bool TestRendererReceivesAllChildrenButNotGpuOnlySwitch() {
   browserd::SetEmbedderSwitches({
+      browserd::EmbedderSwitch("all-child", std::nullopt,
+                               browserd::kSwitchScopeAllChildren),
       browserd::EmbedderSwitch(
           switches::kDisableFeatures,
           "FallbackToSWIfGLES3NotSupported",
@@ -65,6 +118,7 @@ bool TestRendererDoesNotReceiveGpuOnlySwitch() {
   bool ok = ExpectEqual("renderer disable-features",
                         child.GetSwitchValueASCII(switches::kDisableFeatures),
                         "");
+  ok = ExpectHasSwitch("renderer all-child", child, "all-child") && ok;
   browserd::ClearEmbedderSwitches();
   return ok;
 }
@@ -110,8 +164,10 @@ bool TestBrowserScope() {
 }  // namespace
 
 int main() {
-  if (!TestContentBrowserClientForwardsGpuChildSwitch() ||
-      !TestRendererDoesNotReceiveGpuOnlySwitch() ||
+  if (!TestUnknownChildReceivesAllChildrenSwitch() ||
+      !TestUnknownChildDoesNotReceiveGpuOnlySwitch() ||
+      !TestContentBrowserClientForwardsGpuChildSwitch() ||
+      !TestRendererReceivesAllChildrenButNotGpuOnlySwitch() ||
       !TestAllChildrenAndFeatureMerging() || !TestBrowserScope()) {
     return 1;
   }

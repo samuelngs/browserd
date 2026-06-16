@@ -88,13 +88,10 @@ uint32_t ScopeForChildProcess(base::CommandLine* command_line) {
     return 0;
   }
 
+  uint32_t scope = kSwitchScopeAllChildren;
   std::string process_type =
       command_line->GetSwitchValueASCII(::switches::kProcessType);
-  if (process_type.empty()) {
-    return 0;
-  }
 
-  uint32_t scope = kSwitchScopeAllChildren;
   if (process_type == ::switches::kGpuProcess) {
     scope |= kSwitchScopeGpuChild;
   } else if (process_type == ::switches::kRendererProcess) {
