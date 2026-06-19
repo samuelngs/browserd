@@ -9,6 +9,7 @@
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "browserd/browser_runtime.h"
+#include "browserd/gui/runtime_options.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace browserd::gui {
@@ -19,6 +20,7 @@ class GuiWindow;
 class GuiRuntime : public BrowserRuntime {
  public:
   GuiRuntime(std::unique_ptr<BrowserContext> browser_context,
+             RuntimeOptions options,
              base::RepeatingClosure quit_callback);
   ~GuiRuntime() override;
 
@@ -59,6 +61,7 @@ class GuiRuntime : public BrowserRuntime {
   void ChooseFallbackActiveTab();
 
   std::unique_ptr<BrowserContext> browser_context_;
+  RuntimeOptions options_;
   std::vector<Tab> tabs_;
   std::string active_target_id_;
   uint64_t next_tab_id_ = 1;

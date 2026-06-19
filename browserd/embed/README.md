@@ -16,9 +16,19 @@ Host lifecycle:
    functions directly.
 7. Call `browserd_shutdown(session)` when the host is done.
 
-`browserd_run` blocks until browserd shuts down. For GUI mode, call it on the
-process main thread. Callbacks run on Chromium's UI thread and should return
-quickly.
+`browserd_run` blocks until browserd shuts down. Chromium `ContentMain` is a
+one-runtime-per-process entry point for the embedding API: after
+`browserd_run` returns, a later `browserd_run` in the same process is rejected
+instead of re-entering Chromium. For GUI mode, call it on the process main
+thread. Callbacks run on Chromium's UI thread and should return quickly.
+
+Embedded GUI hosts that want lazy visible windows should set
+`browserd_config_t.start_empty = true` and
+`browserd_config_t.idle_on_zero_tabs = true`. With those options, the ready
+callback starts with zero tabs and no visible window, `browserd_tab_new` creates
+the first visible content window, and closing the final tab returns to an idle
+zero-tab state. Call `browserd_shutdown(session)` only during final host
+teardown.
 
 Callback payload memory is borrowed. Strings, byte buffers, tabs, and cookies
 are valid only during the callback. Rust hosts must copy anything they need to

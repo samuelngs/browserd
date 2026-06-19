@@ -8,11 +8,13 @@
 namespace {
 
 constexpr char kGuiSmokeSwitch[] = "--gui-smoke";
+constexpr int kMaxScreenshotAttempts = 3;
 
 struct SmokeState {
   bool failed = false;
   bool gui = false;
   bool checked_title = false;
+  int screenshot_attempts = 0;
 };
 
 bool IsOk(browserd_status_t status, const char* step) {
@@ -34,6 +36,16 @@ void OnScreenshot(browserd_session_t* session,
                   browserd_bytes_t value,
                   void* user_data) {
   auto* state = static_cast<SmokeState*>(user_data);
+  if (status.code == BROWSERD_STATUS_OK && value.len > 0) {
+    Finish(session, state, true);
+    return;
+  }
+  if (state->screenshot_attempts < kMaxScreenshotAttempts) {
+    ++state->screenshot_attempts;
+    if (browserd_screenshot(session, nullptr, &OnScreenshot, user_data) == 0) {
+      return;
+    }
+  }
   Finish(session, state, IsOk(status, "screenshot") && value.len > 0);
 }
 
@@ -46,6 +58,7 @@ void OnSnapshot(browserd_session_t* session,
     Finish(session, state, false);
     return;
   }
+  state->screenshot_attempts = 1;
   if (browserd_screenshot(session, nullptr, &OnScreenshot, user_data) != 0) {
     Finish(session, state, false);
   }

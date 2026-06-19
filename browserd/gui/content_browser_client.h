@@ -5,6 +5,7 @@
 #include <string>
 
 #include "browserd/gui/browser_main_parts.h"
+#include "browserd/gui/runtime_options.h"
 #include "content/public/browser/content_browser_client.h"
 
 namespace base {
@@ -24,7 +25,8 @@ namespace browserd::gui {
 class ContentBrowserClient : public content::ContentBrowserClient {
  public:
   ContentBrowserClient();
-  explicit ContentBrowserClient(
+  ContentBrowserClient(
+      RuntimeOptions options,
       BrowserMainParts::RuntimeReadyCallback runtime_ready_callback);
   ~ContentBrowserClient() override;
 
@@ -42,6 +44,7 @@ class ContentBrowserClient : public content::ContentBrowserClient {
   std::string GetUserAgent() override;
   blink::UserAgentMetadata GetUserAgentMetadata() override;
 
+  RuntimeOptions options_;
   BrowserMainParts::RuntimeReadyCallback runtime_ready_callback_;
 };
 

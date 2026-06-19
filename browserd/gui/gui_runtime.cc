@@ -25,13 +25,18 @@ GuiRuntime::Tab::Tab(Tab&&) = default;
 GuiRuntime::Tab& GuiRuntime::Tab::operator=(Tab&&) = default;
 
 GuiRuntime::GuiRuntime(std::unique_ptr<BrowserContext> browser_context,
+                       RuntimeOptions options,
                        base::RepeatingClosure quit_callback)
     : browser_context_(std::move(browser_context)),
+      options_(options),
       quit_callback_(std::move(quit_callback)) {}
 
 GuiRuntime::~GuiRuntime() = default;
 
 bool GuiRuntime::Initialize() {
+  if (!options_.create_initial_tab) {
+    return true;
+  }
   return CreateTab(GURL("about:blank")).has_value();
 }
 
@@ -115,7 +120,7 @@ bool GuiRuntime::CloseTab(const std::optional<std::string>& target_id) {
   if (was_active) {
     ChooseFallbackActiveTab();
   }
-  if (tabs_.empty()) {
+  if (tabs_.empty() && options_.shutdown_on_zero_tabs) {
     Shutdown();
   }
   return true;
@@ -197,7 +202,7 @@ void GuiRuntime::RemoveClosedWindow(std::string target_id) {
   if (was_active) {
     ChooseFallbackActiveTab();
   }
-  if (tabs_.empty()) {
+  if (tabs_.empty() && options_.shutdown_on_zero_tabs) {
     Shutdown();
   }
 }

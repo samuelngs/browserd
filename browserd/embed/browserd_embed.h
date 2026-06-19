@@ -65,6 +65,8 @@ typedef struct browserd_config {
   const char* user_data_dir;
   const browserd_switch_t* switches;
   size_t switches_len;
+  bool start_empty;
+  bool idle_on_zero_tabs;
 } browserd_config_t;
 
 typedef struct browserd_string {

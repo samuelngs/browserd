@@ -5,6 +5,7 @@
 
 #include "base/functional/callback.h"
 #include "browserd/gui/browser_main_parts.h"
+#include "browserd/gui/runtime_options.h"
 
 namespace base {
 class CommandLine;
@@ -34,6 +35,7 @@ void ApplyDefaultCommandLineSwitches(int argc,
 int RunGuiContentMain(
     int argc,
     const char** argv,
+    browserd::gui::RuntimeOptions options,
     browserd::gui::BrowserMainParts::RuntimeReadyCallback ready_callback);
 int RunHeadlessContentMain(
     int argc,

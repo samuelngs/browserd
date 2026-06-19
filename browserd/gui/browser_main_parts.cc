@@ -18,8 +18,10 @@
 
 namespace browserd::gui {
 
-BrowserMainParts::BrowserMainParts(RuntimeReadyCallback runtime_ready_callback)
-    : runtime_ready_callback_(std::move(runtime_ready_callback)) {}
+BrowserMainParts::BrowserMainParts(RuntimeOptions options,
+                                   RuntimeReadyCallback runtime_ready_callback)
+    : runtime_ready_callback_(std::move(runtime_ready_callback)),
+      options_(options) {}
 
 BrowserMainParts::~BrowserMainParts() = default;
 
@@ -36,7 +38,7 @@ int BrowserMainParts::PreMainMessageLoopRun() {
 
   auto browser_context = std::make_unique<BrowserContext>(user_data_dir);
   auto runtime = std::make_unique<GuiRuntime>(
-      std::move(browser_context),
+      std::move(browser_context), options_,
       base::BindRepeating(&BrowserMainParts::RequestQuit,
                           weak_factory_.GetWeakPtr()));
   if (!runtime->Initialize()) {

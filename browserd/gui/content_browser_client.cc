@@ -15,14 +15,17 @@ namespace browserd::gui {
 
 ContentBrowserClient::ContentBrowserClient() = default;
 ContentBrowserClient::ContentBrowserClient(
+    RuntimeOptions options,
     BrowserMainParts::RuntimeReadyCallback runtime_ready_callback)
-    : runtime_ready_callback_(std::move(runtime_ready_callback)) {}
+    : options_(options),
+      runtime_ready_callback_(std::move(runtime_ready_callback)) {}
 
 ContentBrowserClient::~ContentBrowserClient() = default;
 
 std::unique_ptr<content::BrowserMainParts>
 ContentBrowserClient::CreateBrowserMainParts(bool is_integration_test) {
-  return std::make_unique<BrowserMainParts>(std::move(runtime_ready_callback_));
+  return std::make_unique<BrowserMainParts>(
+      options_, std::move(runtime_ready_callback_));
 }
 
 void ContentBrowserClient::AppendExtraCommandLineSwitches(

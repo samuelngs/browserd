@@ -151,8 +151,9 @@ void ApplyDefaultCommandLineSwitches(int argc,
 int RunGuiContentMain(
     int argc,
     const char** argv,
+    browserd::gui::RuntimeOptions options,
     browserd::gui::BrowserMainParts::RuntimeReadyCallback ready_callback) {
-  browserd::gui::MainDelegate delegate(std::move(ready_callback));
+  browserd::gui::MainDelegate delegate(options, std::move(ready_callback));
   content::ContentMainParams params(&delegate);
   params.argc = argc;
   params.argv = argv;

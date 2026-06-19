@@ -63,8 +63,10 @@ void InitializeResourceBundle(const base::CommandLine& command_line) {
 MainDelegate::MainDelegate() = default;
 
 MainDelegate::MainDelegate(
+    RuntimeOptions options,
     BrowserMainParts::RuntimeReadyCallback runtime_ready_callback)
-    : runtime_ready_callback_(std::move(runtime_ready_callback)) {}
+    : options_(options),
+      runtime_ready_callback_(std::move(runtime_ready_callback)) {}
 
 MainDelegate::~MainDelegate() = default;
 
@@ -93,7 +95,7 @@ std::optional<int> MainDelegate::PreBrowserMain() {
 content::ContentBrowserClient* MainDelegate::CreateContentBrowserClient() {
   content_browser_client_ =
       std::make_unique<ContentBrowserClient>(
-          std::move(runtime_ready_callback_));
+          options_, std::move(runtime_ready_callback_));
   return content_browser_client_.get();
 }
 

@@ -104,6 +104,12 @@ executable("browserd_embed_smoke") {
   deps = [ ":browserd_embed" ]
 }
 
+executable("browserd_embed_lifecycle_smoke") {
+  sources = [ "embed/browserd_embed_lifecycle_smoke.cc" ]
+
+  deps = [ ":browserd_embed" ]
+}
+
 executable("browserd_embedder_switches_test") {
   sources = [ "embedder_switches_test.cc" ]
 
@@ -134,6 +140,7 @@ source_set("browserd_runtime_lib") {
     "gui/gui_window.h",
     "gui/main_delegate.cc",
     "gui/main_delegate.h",
+    "gui/runtime_options.h",
     "headless_runtime.cc",
     "headless_runtime.h",
     "startup/browserd_main.cc",

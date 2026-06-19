@@ -24,7 +24,7 @@ int main(int argc, const char** argv) {
   if (requested_gui) {
     browserd::App app;
     return browserd::startup::RunGuiContentMain(
-        argc, argv,
+        argc, argv, browserd::gui::RuntimeOptions(),
         base::BindOnce(&browserd::App::Start, base::Unretained(&app)));
   }
 

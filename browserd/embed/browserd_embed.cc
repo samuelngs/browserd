@@ -15,8 +15,10 @@
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/no_destructor.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/synchronization/lock.h"
 #include "browserd/browser_runtime.h"
 #include "browserd/core/browser_controller.h"
 #include "browserd/embedder_switches.h"
@@ -30,6 +32,7 @@
 
 struct browserd_session {
   std::unique_ptr<browserd::BrowserController> controller;
+  bool shutting_down = false;
 };
 
 namespace {
@@ -44,6 +47,40 @@ using browserd::EvaluateResult;
 
 constexpr int kScheduleOk = 0;
 constexpr int kScheduleRejected = 1;
+
+enum class EmbedRunLifecycle {
+  kNotStarted,
+  kRunning,
+  kStopped,
+};
+
+struct EmbedLifecycleState {
+  base::Lock lock;
+  EmbedRunLifecycle state = EmbedRunLifecycle::kNotStarted;
+};
+
+EmbedLifecycleState* GetEmbedLifecycleState() {
+  static base::NoDestructor<EmbedLifecycleState> state;
+  return state.get();
+}
+
+bool TryBeginRun() {
+  EmbedLifecycleState* lifecycle = GetEmbedLifecycleState();
+  base::AutoLock lock(lifecycle->lock);
+  if (lifecycle->state != EmbedRunLifecycle::kNotStarted) {
+    return false;
+  }
+  lifecycle->state = EmbedRunLifecycle::kRunning;
+  return true;
+}
+
+void FinishRun() {
+  EmbedLifecycleState* lifecycle = GetEmbedLifecycleState();
+  base::AutoLock lock(lifecycle->lock);
+  if (lifecycle->state == EmbedRunLifecycle::kRunning) {
+    lifecycle->state = EmbedRunLifecycle::kStopped;
+  }
+}
 
 browserd_status_code_t ToCStatusCode(BrowserStatusCode code) {
   switch (code) {
@@ -123,7 +160,7 @@ browserd_cookie_t ToCCookie(const CookieInfo& cookie) {
 using ControllerTask = base::OnceCallback<void(BrowserController*)>;
 
 int Schedule(browserd_session_t* session, ControllerTask task) {
-  if (!session || !session->controller) {
+  if (!session || session->shutting_down || !session->controller) {
     return kScheduleRejected;
   }
   BrowserController* controller = session->controller.get();
@@ -134,10 +171,17 @@ int Schedule(browserd_session_t* session, ControllerTask task) {
   runner->PostTask(
       FROM_HERE,
       base::BindOnce(
-          [](BrowserController* controller, ControllerTask task) {
+          [](browserd_session_t* session,
+             BrowserController* controller,
+             ControllerTask task) {
+            if (!session || session->shutting_down || !session->controller ||
+                session->controller.get() != controller) {
+              return;
+            }
             std::move(task).Run(controller);
           },
-          base::Unretained(controller), std::move(task)));
+          base::Unretained(session), base::Unretained(controller),
+          std::move(task)));
   return kScheduleOk;
 }
 
@@ -274,6 +318,7 @@ void DestroySessionController(browserd_session_t* session) {
     return;
   }
 
+  session->shutting_down = true;
   std::unique_ptr<BrowserController> controller =
       std::move(session->controller);
   if (browserd::BrowserRuntime* runtime = controller->runtime()) {
@@ -319,6 +364,27 @@ bool ConfigRequestsGui(const browserd_config_t* config) {
   return ConfigFieldPresent(config,
                             offsetof(browserd_config_t, gui) + sizeof(bool)) &&
          config->gui;
+}
+
+bool ConfigStartEmpty(const browserd_config_t* config) {
+  return ConfigFieldPresent(config, offsetof(browserd_config_t, start_empty) +
+                                        sizeof(bool)) &&
+         config->start_empty;
+}
+
+bool ConfigIdleOnZeroTabs(const browserd_config_t* config) {
+  return ConfigFieldPresent(config,
+                            offsetof(browserd_config_t, idle_on_zero_tabs) +
+                                sizeof(bool)) &&
+         config->idle_on_zero_tabs;
+}
+
+browserd::gui::RuntimeOptions ConfigGuiRuntimeOptions(
+    const browserd_config_t* config) {
+  browserd::gui::RuntimeOptions options;
+  options.create_initial_tab = !ConfigStartEmpty(config);
+  options.shutdown_on_zero_tabs = !ConfigIdleOnZeroTabs(config);
+  return options;
 }
 
 const char* ConfigUserDataDir(const browserd_config_t* config) {
@@ -390,7 +456,7 @@ browserd_process_result_t browserd_process_main(int argc, const char** argv) {
   result.handled = true;
   if (requested_gui) {
     result.exit_code = browserd::startup::RunGuiContentMain(
-        argc, argv,
+        argc, argv, browserd::gui::RuntimeOptions(),
         browserd::gui::BrowserMainParts::RuntimeReadyCallback());
     return result;
   }
@@ -404,6 +470,9 @@ int browserd_run(const browserd_config_t* config,
                  browserd_ready_callback ready,
                  void* user_data) {
   if (!ready) {
+    return kScheduleRejected;
+  }
+  if (!TryBeginRun()) {
     return kScheduleRejected;
   }
 
@@ -421,18 +490,28 @@ int browserd_run(const browserd_config_t* config,
   state.ready = ready;
   state.user_data = user_data;
 
+  int exit_code = 0;
   if (requested_gui) {
-    return browserd::startup::RunGuiContentMain(
-        0, nullptr,
+    exit_code = browserd::startup::RunGuiContentMain(
+        0, nullptr, ConfigGuiRuntimeOptions(config),
         base::BindOnce(&NotifyReady, base::Unretained(&state)));
+  } else {
+    exit_code = browserd::startup::RunHeadlessContentMain(
+        0, nullptr,
+        base::BindOnce(&OnHeadlessBrowserStart, base::Unretained(&state)));
   }
-  return browserd::startup::RunHeadlessContentMain(
-      0, nullptr,
-      base::BindOnce(&OnHeadlessBrowserStart, base::Unretained(&state)));
+  FinishRun();
+  browserd::ClearEmbedderSwitches();
+  return exit_code;
 }
 
 void browserd_shutdown(browserd_session_t* session) {
-  if (!session || !session->controller) {
+  if (!session || session->shutting_down) {
+    return;
+  }
+  session->shutting_down = true;
+  if (!session->controller) {
+    browserd::ClearEmbedderSwitches();
     return;
   }
 

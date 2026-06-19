@@ -44,6 +44,8 @@ struct BrowserdConfig {
     user_data_dir: *const c_char,
     switches: *const BrowserdSwitch,
     switches_len: usize,
+    start_empty: bool,
+    idle_on_zero_tabs: bool,
 }
 
 #[repr(C)]
@@ -176,6 +178,8 @@ fn main() {
         user_data_dir: std::ptr::null(),
         switches: switches.as_ptr(),
         switches_len: switches.len(),
+        start_empty: false,
+        idle_on_zero_tabs: false,
     };
     let exit_code = unsafe { browserd_run(&config, on_ready, std::ptr::null_mut()) };
     process::exit(exit_code);

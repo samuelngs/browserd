@@ -5,6 +5,7 @@
 #include <optional>
 
 #include "browserd/gui/browser_main_parts.h"
+#include "browserd/gui/runtime_options.h"
 #include "content/public/app/content_main_delegate.h"
 
 namespace content {
@@ -18,7 +19,8 @@ namespace browserd::gui {
 class MainDelegate : public content::ContentMainDelegate {
  public:
   MainDelegate();
-  explicit MainDelegate(
+  MainDelegate(
+      RuntimeOptions options,
       BrowserMainParts::RuntimeReadyCallback runtime_ready_callback);
   ~MainDelegate() override;
 
@@ -35,6 +37,7 @@ class MainDelegate : public content::ContentMainDelegate {
   std::unique_ptr<content::ContentClient> content_client_;
   std::unique_ptr<content::ContentBrowserClient> content_browser_client_;
   std::unique_ptr<content::ContentRendererClient> content_renderer_client_;
+  RuntimeOptions options_;
   BrowserMainParts::RuntimeReadyCallback runtime_ready_callback_;
 };
 
