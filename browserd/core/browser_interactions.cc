@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -13,15 +14,14 @@
 #include "base/location.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
+#include "browserd/core/devtools_evaluator.h"
 #include "components/input/native_web_keyboard_event.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/common/isolated_world_ids.h"
 #include "third_party/blink/public/common/input/web_mouse_event.h"
 #include "third_party/blink/public/common/input/web_mouse_wheel_event.h"
 #include "ui/accessibility/ax_action_data.h"
@@ -79,6 +79,149 @@ BrowserStatus InvalidRef() {
 
 bool ParseRef(const std::string& ref, int* node_id) {
   return base::StringToInt(ref, node_id);
+}
+
+bool ParseDomRef(const std::string& ref, int* index) {
+  constexpr std::string_view kPrefix = "dom:";
+  if (ref.rfind(kPrefix, 0) != 0) {
+    return false;
+  }
+  return base::StringToInt(ref.substr(kPrefix.size()), index) && *index >= 0;
+}
+
+std::string DomRefPrelude(int index) {
+  return "const el = window.__browserdDomRefs && "
+         "window.__browserdDomRefs[" +
+         base::NumberToString(index) +
+         "];"
+         "if (!el || !el.isConnected) "
+         "  return 'Error: element ref not found; call browser_snapshot again';";
+}
+
+std::string DomClickExpression(int index) {
+  return "(() => {"
+         "  " +
+         DomRefPrelude(index) +
+         "  el.scrollIntoView({block:'center', inline:'center'});"
+         "  if (el.focus) el.focus({preventScroll:true});"
+         "  const r = el.getBoundingClientRect();"
+         "  const x = r.left + r.width / 2;"
+         "  const y = r.top + r.height / 2;"
+         "  const opts = {bubbles:true, cancelable:true, view:window, clientX:x, clientY:y};"
+         "  for (const type of ['mouseover','mousemove','mousedown','mouseup','click']) {"
+         "    el.dispatchEvent(new MouseEvent(type, opts));"
+         "  }"
+         "  return 'Clicked element';"
+         "})()";
+}
+
+std::string DomHoverExpression(int index) {
+  return "(() => {"
+         "  " +
+         DomRefPrelude(index) +
+         "  el.scrollIntoView({block:'center', inline:'center'});"
+         "  const r = el.getBoundingClientRect();"
+         "  const x = r.left + r.width / 2;"
+         "  const y = r.top + r.height / 2;"
+         "  const opts = {bubbles:true, cancelable:true, view:window, clientX:x, clientY:y};"
+         "  el.dispatchEvent(new MouseEvent('mouseover', opts));"
+         "  el.dispatchEvent(new MouseEvent('mousemove', opts));"
+         "  return 'Hovered over element';"
+         "})()";
+}
+
+std::string DomTypeExpression(int index,
+                              const std::string& text,
+                              bool clear) {
+  return "(() => {"
+         "  " +
+         DomRefPrelude(index) +
+         "  const text = " +
+         base::GetQuotedJSONString(text) +
+         ";"
+         "  el.scrollIntoView({block:'center', inline:'center'});"
+         "  if (el.focus) el.focus({preventScroll:true});"
+         "  const tag = el.tagName ? el.tagName.toLowerCase() : '';"
+         "  if (tag === 'input' || tag === 'textarea') {"
+         "    if (" +
+         std::string(clear ? "true" : "false") +
+         ") el.value = '';"
+         "    if (typeof el.setRangeText === 'function') {"
+         "      const start = el.selectionStart ?? el.value.length;"
+         "      const end = el.selectionEnd ?? el.value.length;"
+         "      el.setRangeText(text, start, end, 'end');"
+         "    } else {"
+         "      el.value += text;"
+         "    }"
+         "    el.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:text}));"
+         "    el.dispatchEvent(new Event('change', {bubbles:true}));"
+         "    return 'Typed text';"
+         "  }"
+         "  if (el.isContentEditable) {"
+         "    if (" +
+         std::string(clear ? "true" : "false") +
+         ") el.textContent = '';"
+         "    document.execCommand('insertText', false, text);"
+         "    el.dispatchEvent(new InputEvent('input', {bubbles:true, inputType:'insertText', data:text}));"
+         "    return 'Typed text';"
+         "  }"
+         "  return 'Error: element does not accept text';"
+         "})()";
+}
+
+std::string DomSelectExpression(int index,
+                                const std::vector<std::string>& values) {
+  std::string js_values;
+  for (const auto& value : values) {
+    if (!js_values.empty()) {
+      js_values += ",";
+    }
+    js_values += base::GetQuotedJSONString(value);
+  }
+
+  return "(() => {"
+         "  " +
+         DomRefPrelude(index) +
+         "  if (!el || el.tagName !== 'SELECT')"
+         "    return 'Error: element is not a select';"
+         "  const vals = [" +
+         js_values +
+         "];"
+         "  Array.from(el.options).forEach(o => {"
+         "    o.selected = vals.includes(o.value);"
+         "  });"
+         "  el.dispatchEvent(new Event('input', {bubbles: true}));"
+         "  el.dispatchEvent(new Event('change', {bubbles: true}));"
+         "  return 'Selected ' + vals.length + ' option(s)';"
+         "})()";
+}
+
+std::string DomDragExpression(int start_index, int end_index) {
+  return "(() => {"
+         "  const source = window.__browserdDomRefs && "
+         "window.__browserdDomRefs[" +
+         base::NumberToString(start_index) +
+         "];"
+         "  const target = window.__browserdDomRefs && "
+         "window.__browserdDomRefs[" +
+         base::NumberToString(end_index) +
+         "];"
+         "  if (!source || !source.isConnected || !target || !target.isConnected)"
+         "    return 'Error: element ref not found; call browser_snapshot again';"
+         "  const dt = new DataTransfer();"
+         "  source.scrollIntoView({block:'center', inline:'center'});"
+         "  const sr = source.getBoundingClientRect();"
+         "  const tr = target.getBoundingClientRect();"
+         "  const startOpts = {bubbles:true, cancelable:true, dataTransfer:dt, clientX:sr.left + sr.width / 2, clientY:sr.top + sr.height / 2};"
+         "  const endOpts = {bubbles:true, cancelable:true, dataTransfer:dt, clientX:tr.left + tr.width / 2, clientY:tr.top + tr.height / 2};"
+         "  source.dispatchEvent(new DragEvent('dragstart', startOpts));"
+         "  target.scrollIntoView({block:'center', inline:'center'});"
+         "  target.dispatchEvent(new DragEvent('dragenter', endOpts));"
+         "  target.dispatchEvent(new DragEvent('dragover', endOpts));"
+         "  target.dispatchEvent(new DragEvent('drop', endOpts));"
+         "  source.dispatchEvent(new DragEvent('dragend', endOpts));"
+         "  return 'Drag and drop completed';"
+         "})()";
 }
 
 BezierPoint CubicBezier(BezierPoint p0,
@@ -187,18 +330,18 @@ void AnimateMousePath(content::WebContents* web_contents,
 void EvalStatusJS(content::WebContents* web_contents,
                   std::string expression,
                   BrowserController::StatusCallback callback) {
-  auto* rfh = web_contents->GetPrimaryMainFrame();
-  if (!rfh) {
-    std::move(callback).Run(NoActiveFrame());
-    return;
-  }
-
-  rfh->ExecuteJavaScriptForTests(
-      base::UTF8ToUTF16(expression),
+  EvaluateWithDevTools(
+      web_contents, std::move(expression), true, base::Seconds(10),
       base::BindOnce(
-          [](BrowserController::StatusCallback cb, base::Value result) {
-            if (result.is_string()) {
-              const std::string& s = result.GetString();
+          [](BrowserController::StatusCallback cb,
+             BrowserResult<DevToolsEvaluationResult> result) {
+            if (!result.ok()) {
+              std::move(cb).Run(BrowserStatus::Error(result.status.code,
+                                                     result.status.message));
+              return;
+            }
+            if (result.value && result.value->value.is_string()) {
+              const std::string& s = result.value->value.GetString();
               if (s.find("Error") != std::string::npos ||
                   s.find("not found") != std::string::npos) {
                 std::move(cb).Run(BrowserStatus::Error(
@@ -208,8 +351,7 @@ void EvalStatusJS(content::WebContents* web_contents,
             }
             std::move(cb).Run(BrowserStatus::Ok());
           },
-          std::move(callback)),
-      content::ISOLATED_WORLD_ID_GLOBAL);
+          std::move(callback)));
 }
 
 struct TypeState {
@@ -405,20 +547,22 @@ void TypeNextChar(content::WebContents* web_contents,
                   std::shared_ptr<TypeState> state,
                   BrowserController::StatusCallback callback) {
   if (state->index >= state->text.size()) {
-    auto* rfh = web_contents->GetPrimaryMainFrame();
-    if (rfh) {
-      rfh->ExecuteJavaScriptForTests(
-          u"document.activeElement?.dispatchEvent("
-          u"  new Event('change', {bubbles: true}));",
-          base::BindOnce(
-              [](BrowserController::StatusCallback cb, base::Value) {
-                std::move(cb).Run(BrowserStatus::Ok());
-              },
-              std::move(callback)),
-          content::ISOLATED_WORLD_ID_GLOBAL);
-      return;
-    }
-    std::move(callback).Run(BrowserStatus::Ok());
+    EvaluateWithDevTools(
+        web_contents,
+        "document.activeElement?.dispatchEvent("
+        "  new Event('change', {bubbles: true}));",
+        true, base::Seconds(10),
+        base::BindOnce(
+            [](BrowserController::StatusCallback cb,
+               BrowserResult<DevToolsEvaluationResult> result) {
+              if (!result.ok()) {
+                std::move(cb).Run(BrowserStatus::Error(result.status.code,
+                                                       result.status.message));
+                return;
+              }
+              std::move(cb).Run(BrowserStatus::Ok());
+            },
+            std::move(callback)));
     return;
   }
 
@@ -547,6 +691,13 @@ void BrowserController::Click(std::optional<std::string> target_id,
         content::WebContents* web_contents = self->ResolveWebContents(id);
         if (!web_contents) {
           std::move(cb).Run(TabNotFound(id));
+          return;
+        }
+
+        int dom_index = 0;
+        if (ParseDomRef(click_options.ref, &dom_index)) {
+          EvalStatusJS(web_contents, DomClickExpression(dom_index),
+                       std::move(cb));
           return;
         }
 
@@ -692,6 +843,13 @@ void BrowserController::Hover(std::optional<std::string> target_id,
           return;
         }
 
+        int dom_index = 0;
+        if (ParseDomRef(hover_options.ref, &dom_index)) {
+          EvalStatusJS(web_contents, DomHoverExpression(dom_index),
+                       std::move(cb));
+          return;
+        }
+
         int node_id = 0;
         if (!ParseRef(hover_options.ref, &node_id)) {
           std::move(cb).Run(InvalidRef());
@@ -758,6 +916,16 @@ void BrowserController::Type(std::optional<std::string> target_id,
         content::WebContents* web_contents = self->ResolveWebContents(id);
         if (!web_contents) {
           std::move(cb).Run(TabNotFound(id));
+          return;
+        }
+
+        int dom_index = 0;
+        if (ParseDomRef(type_options.ref, &dom_index)) {
+          EvalStatusJS(
+              web_contents,
+              DomTypeExpression(dom_index, type_options.text,
+                                type_options.clear),
+              std::move(cb));
           return;
         }
 
@@ -877,6 +1045,14 @@ void BrowserController::SelectOption(std::optional<std::string> target_id,
           return;
         }
 
+        int dom_index = 0;
+        if (ParseDomRef(select_options.ref, &dom_index)) {
+          EvalStatusJS(web_contents,
+                       DomSelectExpression(dom_index, select_options.values),
+                       std::move(cb));
+          return;
+        }
+
         int node_id = 0;
         if (!ParseRef(select_options.ref, &node_id)) {
           std::move(cb).Run(InvalidRef());
@@ -940,6 +1116,23 @@ void BrowserController::Drag(std::optional<std::string> target_id,
           return;
         }
 
+        int start_dom_index = 0;
+        int end_dom_index = 0;
+        const bool has_start_dom =
+            ParseDomRef(drag_options.start_ref, &start_dom_index);
+        const bool has_end_dom = ParseDomRef(drag_options.end_ref,
+                                             &end_dom_index);
+        if (has_start_dom || has_end_dom) {
+          if (!has_start_dom || !has_end_dom) {
+            std::move(cb).Run(InvalidRef());
+            return;
+          }
+          EvalStatusJS(web_contents,
+                       DomDragExpression(start_dom_index, end_dom_index),
+                       std::move(cb));
+          return;
+        }
+
         int start_id = 0;
         int end_id = 0;
         if (!ParseRef(drag_options.start_ref, &start_id) ||
@@ -999,26 +1192,23 @@ void BrowserController::Drag(std::optional<std::string> target_id,
                                 blink::WebInputEvent::Type::kMouseDown, sx,
                                 sy);
 
-                            auto* rfh = wc->GetPrimaryMainFrame();
-                            if (rfh) {
-                              std::string js =
-                                  "(() => {"
-                                  "  var el = document.elementFromPoint(" +
-                                  base::NumberToString(
-                                      static_cast<int>(sx)) +
-                                  "," +
-                                  base::NumberToString(
-                                      static_cast<int>(sy)) +
-                                  ");"
-                                  "  if (el) {"
-                                  "    var dt = new DataTransfer();"
-                                  "    el.dispatchEvent(new DragEvent('dragstart', {bubbles:true, dataTransfer:dt}));"
-                                  "  }"
-                                  "})()";
-                              rfh->ExecuteJavaScriptForTests(
-                                  base::UTF8ToUTF16(js), base::NullCallback(),
-                                  content::ISOLATED_WORLD_ID_GLOBAL);
-                            }
+                            std::string js =
+                                "(() => {"
+                                "  var el = document.elementFromPoint(" +
+                                base::NumberToString(static_cast<int>(sx)) +
+                                "," +
+                                base::NumberToString(static_cast<int>(sy)) +
+                                ");"
+                                "  if (el) {"
+                                "    var dt = new DataTransfer();"
+                                "    el.dispatchEvent(new DragEvent('dragstart', {bubbles:true, dataTransfer:dt}));"
+                                "  }"
+                                "})()";
+                            EvaluateWithDevTools(
+                                wc, std::move(js), true, base::Seconds(5),
+                                base::BindOnce(
+                                    [](BrowserResult<
+                                        DevToolsEvaluationResult>) {}));
 
                             auto drag_path = GenerateMousePath(sx, sy, ex, ey);
                             base::SequencedTaskRunner::GetCurrentDefault()
@@ -1049,32 +1239,31 @@ void BrowserController::Drag(std::optional<std::string> target_id,
                                                             Type::kMouseUp,
                                                         ex, ey);
 
-                                                    auto* rfh =
-                                                        wc->GetPrimaryMainFrame();
-                                                    if (rfh) {
-                                                      std::string js =
-                                                          "(() => {"
-                                                          "  var el = document.elementFromPoint(" +
-                                                          base::NumberToString(
-                                                              static_cast<int>(
-                                                                  ex)) +
-                                                          "," +
-                                                          base::NumberToString(
-                                                              static_cast<int>(
-                                                                  ey)) +
-                                                          ");"
-                                                          "  if (el) {"
-                                                          "    var dt = new DataTransfer();"
-                                                          "    el.dispatchEvent(new DragEvent('drop', {bubbles:true, dataTransfer:dt}));"
-                                                          "    el.dispatchEvent(new DragEvent('dragend', {bubbles:true, dataTransfer:dt}));"
-                                                          "  }"
-                                                          "})()";
-                                                      rfh->ExecuteJavaScriptForTests(
-                                                          base::UTF8ToUTF16(js),
-                                                          base::NullCallback(),
-                                                          content::
-                                                              ISOLATED_WORLD_ID_GLOBAL);
-                                                    }
+                                                    std::string js =
+                                                        "(() => {"
+                                                        "  var el = document.elementFromPoint(" +
+                                                        base::NumberToString(
+                                                            static_cast<int>(
+                                                                ex)) +
+                                                        "," +
+                                                        base::NumberToString(
+                                                            static_cast<int>(
+                                                                ey)) +
+                                                        ");"
+                                                        "  if (el) {"
+                                                        "    var dt = new DataTransfer();"
+                                                        "    el.dispatchEvent(new DragEvent('drop', {bubbles:true, dataTransfer:dt}));"
+                                                        "    el.dispatchEvent(new DragEvent('dragend', {bubbles:true, dataTransfer:dt}));"
+                                                        "  }"
+                                                        "})()";
+                                                    EvaluateWithDevTools(
+                                                        wc, std::move(js),
+                                                        true,
+                                                        base::Seconds(5),
+                                                        base::BindOnce(
+                                                            [](
+                                                                BrowserResult<
+                                                                    DevToolsEvaluationResult>) {}));
                                                     std::move(cb).Run(
                                                         BrowserStatus::Ok());
                                                   },

@@ -5,12 +5,14 @@
 
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "browserd/gui/browser_context.h"
 #include "browserd/gui/gui_window.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 #include "url/gurl.h"
 
@@ -83,6 +85,11 @@ std::optional<BrowserTabInfo> GuiRuntime::CreateTab(const GURL& url) {
 
   std::string target_id = "gui-" + base::NumberToString(next_tab_id_++);
   content::WebContents* web_contents_ptr = web_contents.get();
+  LOG(INFO) << "browserd gui CreateTab created WebContents url=" << url
+            << " initial_frame=" << web_contents_ptr->GetPrimaryMainFrame()
+            << " initial_frame_live="
+            << (web_contents_ptr->GetPrimaryMainFrame() &&
+                web_contents_ptr->GetPrimaryMainFrame()->IsRenderFrameLive());
   auto window = CreateGuiWindow(std::move(web_contents), default_window_size_);
   if (!window) {
     return std::nullopt;
@@ -93,10 +100,24 @@ std::optional<BrowserTabInfo> GuiRuntime::CreateTab(const GURL& url) {
                                           target_id));
   tabs_.emplace_back(target_id, std::move(window));
   active_target_id_ = target_id;
+  tabs_.back().window->Show();
+  LOG(INFO) << "browserd gui CreateTab shown target=" << target_id
+            << " visibility=" << static_cast<int>(web_contents_ptr->GetVisibility())
+            << " frame=" << web_contents_ptr->GetPrimaryMainFrame()
+            << " frame_live="
+            << (web_contents_ptr->GetPrimaryMainFrame() &&
+                web_contents_ptr->GetPrimaryMainFrame()->IsRenderFrameLive());
 
   content::NavigationController::LoadURLParams load_params(url);
   web_contents_ptr->GetController().LoadURLWithParams(load_params);
-  tabs_.back().window->Show();
+  LOG(INFO) << "browserd gui CreateTab LoadURL posted target=" << target_id
+            << " pending_url="
+            << (web_contents_ptr->GetController().GetPendingEntry()
+                    ? web_contents_ptr->GetController()
+                          .GetPendingEntry()
+                          ->GetURL()
+                    : GURL())
+            << " loading=" << web_contents_ptr->IsLoading();
 
   return MakeTabInfo(tabs_.back());
 }

@@ -65,6 +65,7 @@ void AppendSwitch(base::CommandLine* command_line,
   }
 
   if (!embedder_switch.value.has_value()) {
+    command_line->RemoveSwitch(embedder_switch.name);
     command_line->AppendSwitch(embedder_switch.name);
     return;
   }
@@ -73,6 +74,8 @@ void AppendSwitch(base::CommandLine* command_line,
   if (IsCommaMergedSwitch(embedder_switch.name)) {
     value = MergeCommaSeparatedValues(
         command_line->GetSwitchValueASCII(embedder_switch.name), value);
+  } else {
+    command_line->RemoveSwitch(embedder_switch.name);
   }
   command_line->AppendSwitchASCII(embedder_switch.name, value);
 }

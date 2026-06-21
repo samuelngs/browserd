@@ -3,6 +3,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
 #include "browserd/gui/aura_context.h"
+#include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
@@ -21,9 +22,13 @@ class AuraGuiWindow : public GuiWindow {
     host_ = GetAuraContext().CreateHost(initial_size);
     aura::Window* web_contents_window = web_contents_->GetNativeView();
     host_->window_tree_host()->window()->AddChild(web_contents_window);
+    ResizeWebContents(initial_size);
   }
 
   ~AuraGuiWindow() override {
+    if (shown_) {
+      web_contents_->WasHidden();
+    }
     if (close_observer_) {
       host_->window_tree_host()->RemoveObserver(close_observer_.get());
     }
@@ -34,17 +39,28 @@ class AuraGuiWindow : public GuiWindow {
   }
 
   void Show() override {
+    ResizeWebContents(host_->window_tree_host()->window()->bounds().size());
     web_contents_->GetNativeView()->Show();
     host_->window_tree_host()->window()->Show();
     host_->window_tree_host()->Show();
+    ShowWebContents();
+    if (!shown_) {
+      web_contents_->WasShown();
+      shown_ = true;
+    }
   }
 
   void Resize(const gfx::Size& size) override {
     host_->window_tree_host()->SetBoundsInPixels(gfx::Rect(size));
+    ResizeWebContents(size);
   }
 
   void Close() override {
     close_callback_.Reset();
+    if (shown_) {
+      web_contents_->WasHidden();
+      shown_ = false;
+    }
     host_->window_tree_host()->Hide();
   }
 
@@ -61,6 +77,21 @@ class AuraGuiWindow : public GuiWindow {
   }
 
  private:
+  void ResizeWebContents(const gfx::Size& size) {
+    if (content::RenderWidgetHostView* view =
+            web_contents_->GetRenderWidgetHostView()) {
+      view->SetSize(size);
+    }
+  }
+
+  void ShowWebContents() {
+    if (content::RenderWidgetHostView* view =
+            web_contents_->GetRenderWidgetHostView()) {
+      view->Show();
+      view->Focus();
+    }
+  }
+
   class CloseObserver : public aura::WindowTreeHostObserver {
    public:
     explicit CloseObserver(AuraGuiWindow* window) : window_(window) {}
@@ -83,6 +114,7 @@ class AuraGuiWindow : public GuiWindow {
   std::unique_ptr<content::WebContents> web_contents_;
   std::unique_ptr<CloseObserver> close_observer_;
   base::OnceClosure close_callback_;
+  bool shown_ = false;
 };
 
 }  // namespace

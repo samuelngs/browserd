@@ -3,11 +3,20 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <string>
 #include <utility>
 #include <vector>
+
+#if defined(__linux__)
+#include <execinfo.h>
+#include <signal.h>
+#include <string.h>
+#include <unistd.h>
+#endif
 
 #include "base/containers/span.h"
 #include "base/command_line.h"
@@ -15,6 +24,7 @@
 #include "base/files/file_path.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/logging.h"
 #include "base/no_destructor.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
@@ -63,6 +73,44 @@ EmbedLifecycleState* GetEmbedLifecycleState() {
   static base::NoDestructor<EmbedLifecycleState> state;
   return state.get();
 }
+
+#if defined(__linux__)
+void BrowserdCrashSignalHandler(int signal_number) {
+  const char prefix[] = "\nbrowserd crash signal stack:\n";
+  ssize_t written = write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
+  (void)written;
+  void* frames[128];
+  int frame_count = backtrace(frames, 128);
+  backtrace_symbols_fd(frames, frame_count, STDERR_FILENO);
+
+  signal(signal_number, SIG_DFL);
+  raise(signal_number);
+}
+
+void InstallBrowserdCrashSignalHandler() {
+  static std::atomic<bool> installed{false};
+  bool expected = false;
+  if (!installed.compare_exchange_strong(expected, true)) {
+    return;
+  }
+
+  void* warmup_frames[1];
+  backtrace(warmup_frames, 1);
+
+  struct sigaction action;
+  memset(&action, 0, sizeof(action));
+  action.sa_handler = BrowserdCrashSignalHandler;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = SA_RESETHAND | SA_NODEFER;
+  sigaction(SIGABRT, &action, nullptr);
+  sigaction(SIGSEGV, &action, nullptr);
+  sigaction(SIGBUS, &action, nullptr);
+  sigaction(SIGILL, &action, nullptr);
+  sigaction(SIGTRAP, &action, nullptr);
+}
+#else
+void InstallBrowserdCrashSignalHandler() {}
+#endif
 
 bool TryBeginRun() {
   EmbedLifecycleState* lifecycle = GetEmbedLifecycleState();
@@ -439,6 +487,7 @@ void ApplyRunConfig(const browserd_config_t* config) {
 extern "C" {
 
 browserd_process_result_t browserd_process_main(int argc, const char** argv) {
+  InstallBrowserdCrashSignalHandler();
   browserd_process_result_t result = {false, 0};
   browserd::startup::EnsureCommandLineInitialized(argc, argv);
 
@@ -452,6 +501,10 @@ browserd_process_result_t browserd_process_main(int argc, const char** argv) {
       *command_line, environment.get(), false);
   browserd::startup::ApplyDefaultCommandLineSwitches(
       argc, argv, requested_gui, !requested_gui, environment.get());
+  std::string child_command_line = command_line->GetCommandLineString();
+  fprintf(stderr, "browserd child command line: %s\n",
+          child_command_line.c_str());
+  fflush(stderr);
 
   result.handled = true;
   if (requested_gui) {
@@ -469,6 +522,7 @@ browserd_process_result_t browserd_process_main(int argc, const char** argv) {
 int browserd_run(const browserd_config_t* config,
                  browserd_ready_callback ready,
                  void* user_data) {
+  InstallBrowserdCrashSignalHandler();
   if (!ready) {
     return kScheduleRejected;
   }
@@ -485,6 +539,10 @@ int browserd_run(const browserd_config_t* config,
       *command_line, environment.get(), true);
   browserd::startup::ApplyDefaultCommandLineSwitches(
       0, nullptr, requested_gui, !requested_gui, environment.get());
+  std::string browser_command_line = command_line->GetCommandLineString();
+  fprintf(stderr, "browserd browser command line: %s\n",
+          browser_command_line.c_str());
+  fflush(stderr);
 
   RunState state;
   state.ready = ready;

@@ -2,7 +2,10 @@
 
 #include <iostream>
 #include <memory>
+#include <string>
+#include <vector>
 
+#include "base/base_switches.h"
 #include "base/check.h"
 #include "base/command_line.h"
 #include "base/environment.h"
@@ -40,6 +43,44 @@ bool ShouldAutoEnableGpu(bool requested_gui, base::Environment* environment) {
 #endif
 }
 
+void AppendCommaSeparatedSwitchValue(base::CommandLine* command_line,
+                                     const char* switch_name,
+                                     const char* value) {
+  std::string existing = command_line->GetSwitchValueASCII(switch_name);
+  if (existing.find(value) != std::string::npos) {
+    return;
+  }
+  if (!existing.empty()) {
+    existing += ",";
+  }
+  existing += value;
+  command_line->RemoveSwitch(switch_name);
+  command_line->AppendSwitchASCII(switch_name, existing);
+}
+
+void ConfigureGuiWaylandGpu(base::CommandLine* command_line,
+                            bool requested_gui) {
+  if (!requested_gui || command_line->HasSwitch(::switches::kDisableGpu)) {
+    return;
+  }
+
+  if (!command_line->HasSwitch("ozone-platform")) {
+    command_line->AppendSwitchASCII("ozone-platform", "wayland");
+  }
+  AppendCommaSeparatedSwitchValue(command_line, ::switches::kEnableFeatures,
+                                  "UseOzonePlatform");
+  AppendCommaSeparatedSwitchValue(command_line, ::switches::kDisableFeatures,
+                                  "DefaultANGLEVulkan");
+  if (!command_line->HasSwitch(::switches::kUseGL)) {
+    command_line->AppendSwitchASCII(::switches::kUseGL,
+                                    gl::kGLImplementationANGLEName);
+  }
+  if (!command_line->HasSwitch(::switches::kUseANGLE)) {
+    command_line->AppendSwitchASCII(::switches::kUseANGLE,
+                                    gl::kANGLEImplementationOpenGLESName);
+  }
+}
+
 void ConfigureGpu(base::CommandLine* command_line,
                   bool requested_gui,
                   base::Environment* environment) {
@@ -69,6 +110,26 @@ void MaybeInitializeMacSandbox(int argc, const char** argv) {
   (void)argc;
   (void)argv;
 #endif
+}
+
+void SetContentMainArgv(content::ContentMainParams* params,
+                        int argc,
+                        const char** argv,
+                        base::CommandLine::StringVector* argv_storage,
+                        std::vector<const char*>* argv_ptrs) {
+  if (argc > 0 && argv) {
+    params->argc = argc;
+    params->argv = argv;
+    return;
+  }
+
+  *argv_storage = base::CommandLine::ForCurrentProcess()->argv();
+  argv_ptrs->reserve(argv_storage->size());
+  for (const auto& arg : *argv_storage) {
+    argv_ptrs->push_back(arg.c_str());
+  }
+  params->argc = static_cast<int>(argv_ptrs->size());
+  params->argv = argv_ptrs->data();
 }
 
 }  // namespace
@@ -128,6 +189,7 @@ void ApplyDefaultCommandLineSwitches(int argc,
     MaybeInitializeMacSandbox(argc, argv);
   }
   command_line->AppendSwitch(sandbox::policy::switches::kNoSandbox);
+  ConfigureGuiWaylandGpu(command_line, requested_gui);
   ConfigureGpu(command_line, requested_gui, environment);
   command_line->AppendSwitch(::switches::kEnableUnsafeSwiftShader);
   command_line->AppendSwitch("use-fake-device-for-media-stream");
@@ -155,8 +217,9 @@ int RunGuiContentMain(
     browserd::gui::BrowserMainParts::RuntimeReadyCallback ready_callback) {
   browserd::gui::MainDelegate delegate(options, std::move(ready_callback));
   content::ContentMainParams params(&delegate);
-  params.argc = argc;
-  params.argv = argv;
+  base::CommandLine::StringVector argv_storage;
+  std::vector<const char*> argv_ptrs;
+  SetContentMainArgv(&params, argc, argv, &argv_storage, &argv_ptrs);
   return content::ContentMain(std::move(params));
 }
 
@@ -168,8 +231,9 @@ int RunHeadlessContentMain(
       std::move(on_start_callback));
   headless::HeadlessContentMainDelegate delegate(std::move(browser));
   content::ContentMainParams params(&delegate);
-  params.argc = argc;
-  params.argv = argv;
+  base::CommandLine::StringVector argv_storage;
+  std::vector<const char*> argv_ptrs;
+  SetContentMainArgv(&params, argc, argv, &argv_storage, &argv_ptrs);
   return content::ContentMain(std::move(params));
 }
 
