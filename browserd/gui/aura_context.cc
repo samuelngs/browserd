@@ -1,7 +1,10 @@
 #include "browserd/gui/aura_context.h"
 
+#include <vector>
+
 #include "base/containers/flat_set.h"
 #include "base/memory/raw_ptr.h"
+#include "base/no_destructor.h"
 #include "base/notimplemented.h"
 #include "browserd/gui/fill_layout.h"
 #include "build/build_config.h"
@@ -10,11 +13,13 @@
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/aura/window_tree_host_platform.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/platform_window/platform_window_init_properties.h"
+#include "ui/platform_window/platform_window.h"
 #include "ui/wm/core/base_focus_rules.h"
 #include "ui/wm/core/cursor_loader.h"
 #include "ui/wm/core/cursor_manager.h"
@@ -40,6 +45,12 @@ class FocusRules : public wm::BaseFocusRules {
     return true;
   }
 };
+
+std::vector<std::unique_ptr<aura::WindowTreeHost>>& RetiredWindowTreeHosts() {
+  static base::NoDestructor<std::vector<std::unique_ptr<aura::WindowTreeHost>>>
+      hosts;
+  return *hosts;
+}
 
 }  // namespace
 
@@ -127,7 +138,23 @@ AuraContext::Host::Host(base::PassKey<AuraContext>,
 }
 
 AuraContext::Host::~Host() {
+  if (!window_tree_host_) {
+    return;
+  }
+
+  auto* platform_host =
+      static_cast<aura::WindowTreeHostPlatform*>(window_tree_host_.get());
+  if (platform_host->platform_window()) {
+    platform_host->platform_window()->PrepareForShutdown();
+    platform_host->platform_window()->Hide();
+  }
+
   context_->UninitializeHost(window_tree_host_.get());
+
+  // Deleting WindowTreeHostPlatform synchronously can block in embedded
+  // Wayland/GPU teardown. Hide the platform window and keep the host alive
+  // until process exit instead.
+  RetiredWindowTreeHosts().push_back(std::move(window_tree_host_));
 }
 
 AuraContext::AuraContext() {

@@ -40,7 +40,7 @@ class AuraContext {
 
    private:
     raw_ptr<AuraContext> const context_;
-    std::unique_ptr<aura::WindowTreeHost> const window_tree_host_;
+    std::unique_ptr<aura::WindowTreeHost> window_tree_host_;
   };
 
   AuraContext();

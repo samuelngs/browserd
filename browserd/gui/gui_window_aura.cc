@@ -61,7 +61,6 @@ class AuraGuiWindow : public GuiWindow {
       web_contents_->WasHidden();
       shown_ = false;
     }
-    host_->window_tree_host()->Hide();
   }
 
   void SetCloseCallback(base::OnceClosure callback) override {
