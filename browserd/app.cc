@@ -30,12 +30,17 @@ namespace {
 
 constexpr char kMcpHttpHostSwitch[] = "mcp-http-host";
 constexpr char kMcpHttpPortSwitch[] = "mcp-http-port";
+constexpr char kMcpIpcPathSwitch[] = "mcp-ipc-path";
 constexpr char kMcpHttpTokenEnv[] = "BROWSERD_MCP_HTTP_TOKEN";
 
 struct MCPHttpConfig {
   std::string host;
   uint16_t port = 0;
   std::string token;
+};
+
+struct MCPIPCConfig {
+  std::string path;
 };
 
 bool IsAllowedHttpHost(const std::string& host) {
@@ -86,8 +91,29 @@ std::optional<MCPHttpConfig> GetMCPHttpConfig() {
   return config;
 }
 
+std::optional<MCPIPCConfig> GetMCPIPCConfig() {
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+  if (!command_line->HasSwitch(kMcpIpcPathSwitch)) {
+    return std::nullopt;
+  }
+
+  std::string path = command_line->GetSwitchValueASCII(kMcpIpcPathSwitch);
+  if (path.empty()) {
+    LOG(ERROR) << "Invalid --" << kMcpIpcPathSwitch << " value";
+    return MCPIPCConfig();
+  }
+
+  MCPIPCConfig config;
+  config.path = std::move(path);
+  return config;
+}
+
 bool IsInvalidHttpConfig(const MCPHttpConfig& config) {
   return config.host.empty() || config.token.empty();
+}
+
+bool IsInvalidIPCConfig(const MCPIPCConfig& config) {
+  return config.path.empty();
 }
 
 }  // namespace
@@ -118,11 +144,21 @@ void App::Start(std::unique_ptr<BrowserRuntime> runtime,
   if (http_config.has_value() && IsInvalidHttpConfig(http_config.value())) {
     base::Process::TerminateCurrentProcessImmediately(1);
   }
+  std::optional<MCPIPCConfig> ipc_config = GetMCPIPCConfig();
+  if (ipc_config.has_value() && IsInvalidIPCConfig(ipc_config.value())) {
+    base::Process::TerminateCurrentProcessImmediately(1);
+  }
 
-  mcp_server_.Start(controller_->task_runner(), !http_config.has_value());
+  const bool has_non_stdio_transport =
+      http_config.has_value() || ipc_config.has_value();
+  mcp_server_.Start(controller_->task_runner(), !has_non_stdio_transport);
   if (http_config.has_value() &&
       !mcp_server_.StartHttpTransport(http_config->host, http_config->port,
                                       http_config->token)) {
+    base::Process::TerminateCurrentProcessImmediately(1);
+  }
+  if (ipc_config.has_value() &&
+      !mcp_server_.StartIPCTransport(ipc_config->path)) {
     base::Process::TerminateCurrentProcessImmediately(1);
   }
 }

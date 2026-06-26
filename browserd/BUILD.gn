@@ -2,6 +2,10 @@ import("//build/config/compiler/compiler.gni")
 import("//build/config/ui.gni")
 import("//headless/headless.gni")
 
+if (is_mac) {
+  import("//build/config/mac/rules.gni")
+}
+
 source_set("runtime") {
   sources = [ "browser_runtime.h" ]
 
@@ -64,6 +68,7 @@ executable("browserd") {
   ]
 
   deps = [
+    ":browserd_chrome_runtime_lib",
     ":browserd_lib",
     ":browserd_runtime_lib",
     "//components/os_crypt/common:switches",
@@ -76,6 +81,106 @@ executable("browserd") {
 
   if (is_mac) {
     deps += [ "//sandbox/mac:seatbelt" ]
+    data_deps = [ ":browserd_app" ]
+  }
+}
+
+if (is_mac) {
+  mac_app_bundle("browserd_app") {
+    output_name = "browserd_gui"
+    info_plist = "chrome/browserd-Info.plist"
+
+    sources = [
+      "main.cc",
+      "switches.h",
+    ]
+
+    deps = [
+      ":browserd_chrome_runtime_lib",
+      ":browserd_lib",
+      ":browserd_runtime_lib",
+      "//components/os_crypt/common:switches",
+      "//content/public/app",
+      "//headless:headless_shell_lib",
+      "//sandbox/mac:seatbelt",
+      "//sandbox/policy",
+      "//ui/gl",
+      "//v8:v8_headers",
+    ]
+
+    data_deps = [ "//chrome:chrome_app" ]
+  }
+}
+
+source_set("browserd_chrome_runtime_lib") {
+  sources = [
+    "chrome/browserd_chrome_main.cc",
+    "chrome/browserd_chrome_main.h",
+    "chrome/browserd_chrome_main_delegate.cc",
+    "chrome/browserd_chrome_main_delegate.h",
+    "chrome/content_browser_client.cc",
+    "chrome/content_browser_client.h",
+    "chrome/main_extra_parts.cc",
+    "chrome/main_extra_parts.h",
+    "chrome/native_chrome_runtime.cc",
+    "chrome/native_chrome_runtime.h",
+    "chrome/platform_setup.cc",
+    "chrome/platform_setup.h",
+    "//chrome/app/chrome_crash_reporter_client.cc",
+    "//chrome/app/chrome_crash_reporter_client.h",
+    "//chrome/app/chrome_main_delegate.cc",
+    "//chrome/app/chrome_main_delegate.h",
+    "//chrome/app/startup_timestamps.h",
+  ]
+
+  deps = [
+    ":embedder_switches",
+    ":runtime",
+    "//base",
+    "//browserd/mcp",
+    "//build:branding_buildflags",
+    "//chrome:dependencies",
+    "//chrome/app:command_ids",
+    "//chrome/browser",
+    "//chrome/browser:buildflags",
+    "//chrome/browser:shell_integration",
+    "//chrome/common",
+    "//chrome/common:buildflags",
+    "//chrome/common:version_header",
+    "//chrome/common/profiler",
+    "//components/crash/core/app",
+    "//components/crash/core/common",
+    "//components/memory_system",
+    "//components/policy:generated",
+    "//components/sessions",
+    "//components/sessions:session_id",
+    "//components/webapps/isolated_web_apps:scheme",
+    "//content/public/app",
+    "//content/public/browser",
+    "//content/public/common",
+    "//third_party/cld_3/src/src:cld_3",
+    "//ui/base",
+    "//ui/gfx",
+    "//url",
+  ]
+
+  if (is_mac) {
+    sources += [
+      "//chrome/app/chrome_crash_reporter_client_mac.mm",
+      "//chrome/app/chrome_main_mac.h",
+      "//chrome/app/chrome_main_mac.mm",
+      "chrome/platform_setup_mac.mm",
+    ]
+    frameworks = [ "Carbon.framework" ]
+  } else if (is_win) {
+    sources += [
+      "//chrome/app/chrome_crash_reporter_client_win.cc",
+      "//chrome/app/chrome_crash_reporter_client_win.h",
+    ]
+    deps += [
+      "//chrome/install_static:install_static_util",
+      "//sandbox/win:sandbox",
+    ]
   }
 }
 

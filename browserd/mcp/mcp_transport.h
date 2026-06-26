@@ -18,6 +18,10 @@ using MCPMessageCallback =
     base::RepeatingCallback<void(base::DictValue message,
                                  MCPResponseCallback response_callback)>;
 
+std::optional<base::DictValue> ParseMCPTransportLine(const std::string& line);
+std::optional<std::string> SerializeMCPTransportMessage(
+    const base::DictValue& message);
+
 class MCPStdioTransport {
  public:
   using CloseCallback = base::OnceClosure;

@@ -2,6 +2,7 @@
 #include "base/environment.h"
 #include "base/functional/bind.h"
 #include "browserd/app.h"
+#include "browserd/chrome/browserd_chrome_main.h"
 #include "browserd/startup/browserd_main.h"
 #include "headless/public/headless_browser.h"
 
@@ -23,8 +24,8 @@ int main(int argc, const char** argv) {
 
   if (requested_gui) {
     browserd::App app;
-    return browserd::startup::RunGuiContentMain(
-        argc, argv, browserd::gui::RuntimeOptions(),
+    return browserd::chrome::RunChromeBrowserMain(
+        argc, argv,
         base::BindOnce(&browserd::App::Start, base::Unretained(&app)));
   }
 

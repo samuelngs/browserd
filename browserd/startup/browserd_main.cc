@@ -43,6 +43,7 @@ bool ShouldAutoEnableGpu(bool requested_gui, base::Environment* environment) {
 #endif
 }
 
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 void AppendCommaSeparatedSwitchValue(base::CommandLine* command_line,
                                      const char* switch_name,
                                      const char* value) {
@@ -57,9 +58,11 @@ void AppendCommaSeparatedSwitchValue(base::CommandLine* command_line,
   command_line->RemoveSwitch(switch_name);
   command_line->AppendSwitchASCII(switch_name, existing);
 }
+#endif
 
 void ConfigureGuiWaylandGpu(base::CommandLine* command_line,
                             bool requested_gui) {
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
   if (!requested_gui || command_line->HasSwitch(::switches::kDisableGpu)) {
     return;
   }
@@ -79,6 +82,10 @@ void ConfigureGuiWaylandGpu(base::CommandLine* command_line,
     command_line->AppendSwitchASCII(::switches::kUseANGLE,
                                     gl::kANGLEImplementationOpenGLESName);
   }
+#else
+  (void)command_line;
+  (void)requested_gui;
+#endif
 }
 
 void ConfigureGpu(base::CommandLine* command_line,
@@ -151,11 +158,14 @@ void PrintHelp() {
       << "\n"
       << "Options:\n"
       << "  --help, -h                 Show this help and exit.\n"
-      << "  --gui                      Run with visible content-only windows.\n"
+      << "  --gui                      Run with the native Chromium browser UI.\n"
       << "  --mcp-http-port=<port>     Enable Streamable HTTP MCP on /mcp.\n"
       << "  --mcp-http-host=<host>     HTTP bind host/address. Use 0.0.0.0 or ::\n"
       << "                             to listen on all interfaces.\n"
       << "                             Defaults to 127.0.0.1.\n"
+      << "  --mcp-ipc-path=<path>      Enable local IPC MCP. On macOS/Linux this is\n"
+      << "                             an absolute Unix socket path. On Windows this\n"
+      << "                             is a named pipe name or \\\\.\\pipe\\ name.\n"
       << "  --user-data-dir=<path>     Browser profile directory.\n"
       << "\n"
       << "Environment:\n"

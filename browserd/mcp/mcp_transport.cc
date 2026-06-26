@@ -10,6 +10,32 @@
 
 namespace browserd {
 
+std::optional<base::DictValue> ParseMCPTransportLine(
+    const std::string& line) {
+  if (line.empty()) {
+    return std::nullopt;
+  }
+
+  auto parsed = base::JSONReader::ReadDict(line, base::JSON_PARSE_RFC);
+  if (!parsed.has_value()) {
+    LOG(WARNING) << "Failed to parse MCP message: " << line;
+    return std::nullopt;
+  }
+
+  return parsed;
+}
+
+std::optional<std::string> SerializeMCPTransportMessage(
+    const base::DictValue& message) {
+  std::string json;
+  if (!base::JSONWriter::Write(message, &json)) {
+    LOG(WARNING) << "Failed to serialize MCP message";
+    return std::nullopt;
+  }
+  json.push_back('\n');
+  return json;
+}
+
 MCPStdioTransport::MCPStdioTransport() : reader_thread_("MCPStdinReader") {}
 
 MCPStdioTransport::~MCPStdioTransport() {
@@ -39,22 +65,20 @@ void MCPStdioTransport::SendResponse(
 }
 
 void MCPStdioTransport::SendMessage(const base::DictValue& message) {
-  std::string json;
-  base::JSONWriter::Write(message, &json);
+  std::optional<std::string> json = SerializeMCPTransportMessage(message);
+  if (!json.has_value()) {
+    return;
+  }
+
   // MCP uses newline-delimited JSON on stdio.
-  std::cout << json << "\n" << std::flush;
+  std::cout << json.value() << std::flush;
 }
 
 void MCPStdioTransport::ReadLoop() {
   std::string line;
   while (std::getline(std::cin, line)) {
-    if (line.empty()) {
-      continue;
-    }
-
-    auto parsed = base::JSONReader::ReadDict(line, base::JSON_PARSE_RFC);
+    auto parsed = ParseMCPTransportLine(line);
     if (!parsed.has_value()) {
-      LOG(WARNING) << "Failed to parse MCP message: " << line;
       continue;
     }
 

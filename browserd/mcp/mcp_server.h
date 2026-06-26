@@ -11,6 +11,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/values.h"
 #include "browserd/mcp/mcp_http_transport.h"
+#include "browserd/mcp/mcp_ipc_transport.h"
 #include "browserd/mcp/mcp_tool.h"
 #include "browserd/mcp/mcp_transport.h"
 
@@ -31,6 +32,7 @@ class MCPServer {
   bool StartHttpTransport(const std::string& host,
                           uint16_t port,
                           const std::string& token);
+  bool StartIPCTransport(const std::string& path);
 
   void SetController(BrowserController* controller);
   BrowserController* controller() const { return controller_; }
@@ -82,6 +84,7 @@ class MCPServer {
 
   MCPStdioTransport stdio_transport_;
   MCPHttpTransport http_transport_;
+  MCPIPCTransport ipc_transport_;
   raw_ptr<BrowserController> controller_ = nullptr;
   std::vector<MCPToolDef> tools_;
   bool initialized_ = false;

@@ -9,6 +9,8 @@ Type=simple
 DynamicUser=yes
 StateDirectory=browserd
 CacheDirectory=browserd
+RuntimeDirectory=browserd
+RuntimeDirectoryMode=0700
 Environment=BROWSERD_MCP_HTTP_HOST=127.0.0.1
 Environment=BROWSERD_MCP_HTTP_PORT=9223
 EnvironmentFile=/etc/browserd/browserd.env

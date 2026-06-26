@@ -44,6 +44,12 @@ bool MCPServer::StartHttpTransport(const std::string& host,
       base::BindRepeating(&MCPServer::OnMessage, base::Unretained(this)));
 }
 
+bool MCPServer::StartIPCTransport(const std::string& path) {
+  return ipc_transport_.Start(
+      task_runner_, path,
+      base::BindRepeating(&MCPServer::OnMessage, base::Unretained(this)));
+}
+
 void MCPServer::SetController(BrowserController* controller) {
   controller_ = controller;
 }

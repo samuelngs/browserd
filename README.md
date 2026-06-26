@@ -64,6 +64,21 @@ Use `--mcp-http-host=<address>` to choose a bind address, for example
 `127.0.0.1`, `::1`, `0.0.0.0`, or `::`. HTTP requests must include
 `Authorization: Bearer <token>`.
 
+Local IPC can be enabled explicitly when a host wants MCP without opening a TCP
+port:
+
+```bash
+install -d -m 700 "/tmp/browserd-$UID"
+./out/browserd --mcp-ipc-path="/tmp/browserd-$UID/browserd.sock"
+```
+
+On macOS/Linux, `--mcp-ipc-path` must be an absolute Unix socket path inside an
+existing directory owned by the current user and not writable by group or
+others. Browserd does not create this directory. On Windows, pass a named pipe
+name such as `--mcp-ipc-path=browserd`, which maps to `\\.\pipe\browserd`.
+IPC uses the same newline-delimited MCP JSON-RPC framing as stdio and accepts
+one active client at a time.
+
 Pass `--gui` to run with visible content-only desktop windows instead of the
 default headless mode. Each browser tab is shown as its own native window.
 GUI mode uses a persistent browserd profile by default. Pass
@@ -85,6 +100,15 @@ sudo systemctl enable --now browserd
 
 Set `BROWSERD_MCP_HTTP_TOKEN` in `/etc/browserd/browserd.env` before starting.
 The default endpoint is `http://127.0.0.1:9223/mcp`.
+
+For a local IPC service, use a systemd drop-in that points browserd at the
+private runtime directory:
+
+```ini
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/browserd --mcp-ipc-path=%t/browserd/browserd.sock --user-data-dir=/var/lib/browserd/profile
+```
 
 ## Requirements
 
