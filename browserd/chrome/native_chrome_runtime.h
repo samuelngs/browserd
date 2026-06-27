@@ -1,6 +1,7 @@
 #ifndef BROWSERD_CHROME_NATIVE_CHROME_RUNTIME_H_
 #define BROWSERD_CHROME_NATIVE_CHROME_RUNTIME_H_
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -8,6 +9,8 @@
 #include "browserd/browser_runtime.h"
 
 class BrowserWindowInterface;
+class ScopedKeepAlive;
+class ScopedProfileKeepAlive;
 
 namespace browserd::chrome {
 
@@ -32,6 +35,10 @@ class NativeChromeRuntime : public BrowserRuntime {
 
  private:
   BrowserWindowInterface* ActiveBrowserWindow() const;
+  void EnsureKeepAlive();
+
+  std::unique_ptr<ScopedKeepAlive> keep_alive_;
+  std::unique_ptr<ScopedProfileKeepAlive> profile_keep_alive_;
 };
 
 }  // namespace browserd::chrome

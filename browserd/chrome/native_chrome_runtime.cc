@@ -11,6 +11,9 @@
 #include "base/strings/utf_string_conversions.h"
 #include "browserd/chrome/platform_setup.h"
 #include "chrome/browser/lifetime/application_lifetime_desktop.h"
+#include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
+#include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -18,6 +21,9 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/tabs/tab_enums.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "components/keep_alive_registry/keep_alive_registry.h"
+#include "components/keep_alive_registry/keep_alive_types.h"
+#include "components/keep_alive_registry/scoped_keep_alive.h"
 #include "components/sessions/content/session_tab_helper.h"
 #include "components/sessions/core/session_id.h"
 #include "content/public/browser/navigation_controller.h"
@@ -122,6 +128,8 @@ NativeChromeRuntime::NativeChromeRuntime() = default;
 NativeChromeRuntime::~NativeChromeRuntime() = default;
 
 content::BrowserContext* NativeChromeRuntime::browser_context() const {
+  const_cast<NativeChromeRuntime*>(this)->EnsureKeepAlive();
+
   BrowserWindowInterface* browser = ActiveBrowserWindow();
   if (browser) {
     return browser->GetProfile();
@@ -130,6 +138,8 @@ content::BrowserContext* NativeChromeRuntime::browser_context() const {
 }
 
 content::WebContents* NativeChromeRuntime::active_web_contents() const {
+  const_cast<NativeChromeRuntime*>(this)->EnsureKeepAlive();
+
   BrowserWindowInterface* browser = ActiveBrowserWindow();
   return browser ? browser->GetTabStripModel()->GetActiveWebContents()
                  : nullptr;
@@ -137,11 +147,15 @@ content::WebContents* NativeChromeRuntime::active_web_contents() const {
 
 content::WebContents* NativeChromeRuntime::GetWebContentsByTargetId(
     const std::string& target_id) const {
+  const_cast<NativeChromeRuntime*>(this)->EnsureKeepAlive();
+
   std::optional<LocatedTab> located = FindTabByTargetId(target_id);
   return located.has_value() ? located->web_contents.get() : nullptr;
 }
 
 std::vector<content::WebContents*> NativeChromeRuntime::AllWebContents() const {
+  const_cast<NativeChromeRuntime*>(this)->EnsureKeepAlive();
+
   std::vector<content::WebContents*> web_contents_list;
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* browser) {
@@ -158,6 +172,8 @@ std::vector<content::WebContents*> NativeChromeRuntime::AllWebContents() const {
 }
 
 std::vector<BrowserTabInfo> NativeChromeRuntime::ListTabs() const {
+  const_cast<NativeChromeRuntime*>(this)->EnsureKeepAlive();
+
   std::vector<BrowserTabInfo> tabs;
   ForEachCurrentBrowserWindowInterfaceOrderedByActivation(
       [&](BrowserWindowInterface* browser) {
@@ -174,6 +190,8 @@ std::vector<BrowserTabInfo> NativeChromeRuntime::ListTabs() const {
 }
 
 std::optional<BrowserTabInfo> NativeChromeRuntime::CreateTab(const GURL& url) {
+  EnsureKeepAlive();
+
   BrowserWindowInterface* browser = ActiveBrowserWindow();
   if (!browser) {
     Profile* profile = ProfileManager::GetLastUsedProfileAllowedByPolicy();
@@ -198,6 +216,8 @@ std::optional<BrowserTabInfo> NativeChromeRuntime::CreateTab(const GURL& url) {
 
 bool NativeChromeRuntime::CloseTab(
     const std::optional<std::string>& target_id) {
+  EnsureKeepAlive();
+
   BrowserWindowInterface* browser = nullptr;
   int index = TabStripModel::kNoTab;
   if (target_id.has_value()) {
@@ -224,6 +244,8 @@ bool NativeChromeRuntime::CloseTab(
 }
 
 void NativeChromeRuntime::ResizeActive(const gfx::Size& size) {
+  EnsureKeepAlive();
+
   BrowserWindowInterface* browser = ActiveBrowserWindow();
   if (!browser || !browser->GetWindow()) {
     return;
@@ -234,6 +256,8 @@ void NativeChromeRuntime::ResizeActive(const gfx::Size& size) {
 }
 
 void NativeChromeRuntime::Shutdown() {
+  profile_keep_alive_.reset();
+  keep_alive_.reset();
   ::chrome::CloseAllBrowsersAndQuit();
 }
 
@@ -241,6 +265,29 @@ BrowserWindowInterface* NativeChromeRuntime::ActiveBrowserWindow() const {
   BrowserWindowInterface* active =
       GetLastActiveBrowserWindowInterfaceWithAnyProfile();
   return active ? active : FirstBrowserWindow();
+}
+
+void NativeChromeRuntime::EnsureKeepAlive() {
+  if (KeepAliveRegistry::GetInstance()->IsShuttingDown()) {
+    return;
+  }
+
+  if (!keep_alive_) {
+    keep_alive_ = std::make_unique<ScopedKeepAlive>(
+        KeepAliveOrigin::CHROME_APP_DELEGATE,
+        KeepAliveRestartOption::DISABLED);
+  }
+
+  if (profile_keep_alive_) {
+    return;
+  }
+
+  Profile* profile = ProfileManager::GetLastUsedProfileAllowedByPolicy();
+  if (!profile) {
+    return;
+  }
+  profile_keep_alive_ = std::make_unique<ScopedProfileKeepAlive>(
+      profile, ProfileKeepAliveOrigin::kBackgroundMode);
 }
 
 }  // namespace browserd::chrome

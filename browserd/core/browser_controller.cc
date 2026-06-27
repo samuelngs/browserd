@@ -1020,10 +1020,14 @@ class BrowserController::PageInstrumentation
   raw_ptr<content::WebContents> web_contents_ = nullptr;
 };
 
-class BrowserController::BehaviorSimulator {
+class BrowserController::BehaviorSimulator
+    : public content::WebContentsObserver {
  public:
   BehaviorSimulator() = default;
-  ~BehaviorSimulator() = default;
+  ~BehaviorSimulator() override {
+    behavior_timer_.Stop();
+    Observe(nullptr);
+  }
 
   void Start() {
     mouse_x_ = 400.0 + base::RandDouble() * 200.0;
@@ -1032,10 +1036,14 @@ class BrowserController::BehaviorSimulator {
   }
 
   void UpdateWebContents(content::WebContents* web_contents) {
-    web_contents_ = web_contents;
+    Observe(web_contents);
   }
 
  private:
+  void WebContentsDestroyed() override {
+    Observe(nullptr);
+  }
+
   void ScheduleNext() {
     int next_ms = 70 + base::RandInt(0, 80);
     behavior_timer_.Start(
@@ -1060,8 +1068,9 @@ class BrowserController::BehaviorSimulator {
     mouse_x_ = std::clamp(mouse_x_, 10.0, 1910.0);
     mouse_y_ = std::clamp(mouse_y_, 10.0, 1070.0);
 
-    if (web_contents_) {
-      auto* rwhv = web_contents_->GetRenderWidgetHostView();
+    content::WebContents* current_web_contents = web_contents();
+    if (current_web_contents && !current_web_contents->IsBeingDestroyed()) {
+      auto* rwhv = current_web_contents->GetRenderWidgetHostView();
       auto* rwh = rwhv ? rwhv->GetRenderWidgetHost() : nullptr;
       if (rwh) {
         blink::WebMouseEvent event(
@@ -1078,7 +1087,6 @@ class BrowserController::BehaviorSimulator {
     ScheduleNext();
   }
 
-  raw_ptr<content::WebContents> web_contents_ = nullptr;
   base::RepeatingTimer behavior_timer_;
   double mouse_x_ = 0.0;
   double mouse_y_ = 0.0;

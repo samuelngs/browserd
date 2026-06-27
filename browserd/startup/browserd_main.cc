@@ -17,7 +17,6 @@
 #include "headless/lib/browser/headless_browser_impl.h"
 #include "headless/lib/headless_content_main_delegate.h"
 #include "headless/public/switches.h"
-#include "sandbox/policy/switches.h"
 #include "ui/gl/gl_switches.h"
 
 #if BUILDFLAG(IS_MAC)
@@ -198,7 +197,6 @@ void ApplyDefaultCommandLineSwitches(int argc,
   if (argc > 0 && argv) {
     MaybeInitializeMacSandbox(argc, argv);
   }
-  command_line->AppendSwitch(sandbox::policy::switches::kNoSandbox);
   ConfigureGuiWaylandGpu(command_line, requested_gui);
   ConfigureGpu(command_line, requested_gui, environment);
   command_line->AppendSwitch(::switches::kEnableUnsafeSwiftShader);
