@@ -36,9 +36,10 @@ void SetContentMainArgv(content::ContentMainParams* params,
 
 }  // namespace
 
-int RunChromeBrowserMain(int argc,
-                         const char** argv,
-                         RuntimeReadyCallback ready_callback) {
+NO_STACK_PROTECTOR int RunChromeBrowserMain(
+    int argc,
+    const char** argv,
+    RuntimeReadyCallback ready_callback) {
   if (!SetUpChromePlatform(argc, argv)) {
     return EXIT_FAILURE;
   }

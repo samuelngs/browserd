@@ -13,6 +13,11 @@
 
 namespace {
 
+constexpr char kBrowserdForceGles2Context[] =
+    "browserd-force-gles2-context";
+constexpr char kDisableWaylandGbmSurfaceless[] =
+    "disable-wayland-gbm-surfaceless";
+
 bool ExpectEqual(const std::string& label,
                  const std::string& actual,
                  const std::string& expected) {
@@ -100,6 +105,27 @@ bool TestContentBrowserClientForwardsGpuChildSwitch() {
   return ok;
 }
 
+bool TestGpuChildReceivesDefaultFallbackSwitch() {
+  browserd::SetEmbedderSwitches({});
+
+  base::CommandLine child(base::CommandLine::NO_PROGRAM);
+  child.AppendSwitchASCII(::switches::kProcessType, ::switches::kGpuProcess);
+  browserd::AppendEmbedderSwitchesForChild(&child);
+
+  bool ok = ExpectEqual(
+      "gpu child default disable-features",
+      child.GetSwitchValueASCII(switches::kDisableFeatures),
+      "FallbackToSWIfGLES3NotSupported");
+  ok = ExpectHasSwitch("gpu child default gbm surfaceless", child,
+                       kDisableWaylandGbmSurfaceless) &&
+       ok;
+  ok = ExpectHasSwitch("gpu child default GLES2 context", child,
+                       kBrowserdForceGles2Context) &&
+       ok;
+  browserd::ClearEmbedderSwitches();
+  return ok;
+}
+
 bool TestRendererReceivesAllChildrenButNotGpuOnlySwitch() {
   browserd::SetEmbedderSwitches({
       browserd::EmbedderSwitch("all-child", std::nullopt,
@@ -167,6 +193,7 @@ int main() {
   if (!TestUnknownChildReceivesAllChildrenSwitch() ||
       !TestUnknownChildDoesNotReceiveGpuOnlySwitch() ||
       !TestContentBrowserClientForwardsGpuChildSwitch() ||
+      !TestGpuChildReceivesDefaultFallbackSwitch() ||
       !TestRendererReceivesAllChildrenButNotGpuOnlySwitch() ||
       !TestAllChildrenAndFeatureMerging() || !TestBrowserScope()) {
     return 1;

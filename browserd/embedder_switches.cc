@@ -15,6 +15,13 @@
 namespace browserd {
 namespace {
 
+constexpr char kFallbackToSWIfGLES3NotSupported[] =
+    "FallbackToSWIfGLES3NotSupported";
+constexpr char kDisableWaylandGbmSurfaceless[] =
+    "disable-wayland-gbm-surfaceless";
+constexpr char kBrowserdForceGles2Context[] =
+    "browserd-force-gles2-context";
+
 struct SwitchPolicy {
   base::Lock lock;
   std::vector<EmbedderSwitch> switches GUARDED_BY(lock);
@@ -56,6 +63,19 @@ std::string MergeCommaSeparatedValues(std::string existing,
     merged += value;
   }
   return merged;
+}
+
+bool HasCommaSeparatedValue(const base::CommandLine& command_line,
+                            std::string_view name,
+                            std::string_view expected) {
+  for (const std::string& value : base::SplitString(
+           command_line.GetSwitchValueASCII(name), ",", base::TRIM_WHITESPACE,
+           base::SPLIT_WANT_NONEMPTY)) {
+    if (value == expected) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void AppendSwitch(base::CommandLine* command_line,
@@ -115,6 +135,29 @@ void AppendSwitchesForScope(base::CommandLine* command_line, uint32_t scope) {
   }
 }
 
+void AppendDefaultGpuChildSwitches(base::CommandLine* command_line,
+                                   uint32_t scope) {
+  if (!command_line || !(scope & kSwitchScopeGpuChild)) {
+    return;
+  }
+  AppendSwitch(command_line,
+               EmbedderSwitch(kDisableWaylandGbmSurfaceless, std::nullopt,
+                               kSwitchScopeGpuChild));
+  AppendSwitch(command_line,
+               EmbedderSwitch(kBrowserdForceGles2Context, std::nullopt,
+                               kSwitchScopeGpuChild));
+
+  if (HasCommaSeparatedValue(*command_line, switches::kEnableFeatures,
+                             kFallbackToSWIfGLES3NotSupported)) {
+    return;
+  }
+
+  AppendSwitch(command_line,
+               EmbedderSwitch(switches::kDisableFeatures,
+                               kFallbackToSWIfGLES3NotSupported,
+                               kSwitchScopeGpuChild));
+}
+
 }  // namespace
 
 EmbedderSwitch::EmbedderSwitch() = default;
@@ -145,7 +188,9 @@ void AppendEmbedderSwitchesForBrowser(base::CommandLine* command_line) {
 }
 
 void AppendEmbedderSwitchesForChild(base::CommandLine* command_line) {
-  AppendSwitchesForScope(command_line, ScopeForChildProcess(command_line));
+  uint32_t scope = ScopeForChildProcess(command_line);
+  AppendSwitchesForScope(command_line, scope);
+  AppendDefaultGpuChildSwitches(command_line, scope);
 }
 
 }  // namespace browserd

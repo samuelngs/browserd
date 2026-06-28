@@ -28,6 +28,10 @@ namespace browserd::startup {
 namespace {
 
 constexpr char kGuiEnvironment[] = "BROWSERD_INTERNAL_GUI";
+constexpr char kBrowserdForceGles2Context[] =
+    "browserd-force-gles2-context";
+constexpr char kBrowserdDisableDawnInfo[] =
+    "browserd-disable-dawn-info";
 
 bool ShouldAutoEnableGpu(bool requested_gui, base::Environment* environment) {
   if (requested_gui) {
@@ -72,14 +76,19 @@ void ConfigureGuiWaylandGpu(base::CommandLine* command_line,
   AppendCommaSeparatedSwitchValue(command_line, ::switches::kEnableFeatures,
                                   "UseOzonePlatform");
   AppendCommaSeparatedSwitchValue(command_line, ::switches::kDisableFeatures,
-                                  "DefaultANGLEVulkan");
+                                  "FallbackToSWIfGLES3NotSupported");
+  command_line->AppendSwitch(::switches::kDisableGpuCompositing);
+  command_line->AppendSwitch(::switches::kDisableAcceleratedVideoDecode);
+  command_line->AppendSwitch(::switches::kDisableGpuMemoryBufferVideoFrames);
+  command_line->AppendSwitch(kBrowserdForceGles2Context);
+  command_line->AppendSwitch(kBrowserdDisableDawnInfo);
   if (!command_line->HasSwitch(::switches::kUseGL)) {
     command_line->AppendSwitchASCII(::switches::kUseGL,
-                                    gl::kGLImplementationANGLEName);
+                                    gl::kGLImplementationEGLName);
   }
-  if (!command_line->HasSwitch(::switches::kUseANGLE)) {
-    command_line->AppendSwitchASCII(::switches::kUseANGLE,
-                                    gl::kANGLEImplementationOpenGLESName);
+  if (!command_line->HasSwitch(::switches::kUseCmdDecoder)) {
+    command_line->AppendSwitchASCII(::switches::kUseCmdDecoder,
+                                    gl::kCmdDecoderValidatingName);
   }
 #else
   (void)command_line;

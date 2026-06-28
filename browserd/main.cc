@@ -1,4 +1,5 @@
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/environment.h"
 #include "base/functional/bind.h"
 #include "browserd/app.h"
@@ -6,7 +7,7 @@
 #include "browserd/startup/browserd_main.h"
 #include "headless/public/headless_browser.h"
 
-int main(int argc, const char** argv) {
+NO_STACK_PROTECTOR int main(int argc, const char** argv) {
   browserd::startup::EnsureCommandLineInitialized(argc, argv);
 
   base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
